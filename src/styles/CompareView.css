@@ -1,0 +1,83 @@
+.compare-wrapper {
+  position: relative;
+  background: #0f111a;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overscroll-behavior: contain;
+}
+
+.compare-area {
+  position: relative;
+  width: 100%;
+  height: 520px;
+  background: radial-gradient(circle at top, #1d2033 0%, #0b0d15 70%);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.compare-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.compare-transform {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.video-base,
+.video-top {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: black;
+}
+
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.video-top.ghost {
+  opacity: 0.5;
+}
+
+.mismatch-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mismatch-overlay.visible {
+  opacity: 0.8;
+}
+
+.compare-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 1.1rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+.slider-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}

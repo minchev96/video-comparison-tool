@@ -1,0 +1,23 @@
+.control-grid {
+  display: grid;
+  gap: 1rem;
+  color: #c3c7d7;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
