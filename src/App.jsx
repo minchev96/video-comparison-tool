@@ -9,6 +9,9 @@ import WarningBanner from './components/WarningBanner.jsx'
 
 const FPS_CAP = 40
 const STEP_SECONDS = 1
+const SYNC_TOLERANCE_SECONDS = 1 / 60
+const SPIKE_MISMATCH_RATIO = 0.8
+const PRE_SPIKE_MISMATCH_RATIO = 0.6
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
@@ -48,9 +51,11 @@ function App() {
   const compareWrapperRef = useRef(null)
   const offscreenLeftRef = useRef(null)
   const offscreenRightRef = useRef(null)
+  const offscreenMismatchRef = useRef(null)
   const isSyncingRef = useRef(false)
   const isSeekingRef = useRef(false)
   const lastFpsSampleRef = useRef({ time: performance.now(), frames: 0 })
+  const lastMismatchRatioRef = useRef(0)
   const lastMouseRef = useRef({ x: 0, y: 0 })
   const leftUrlRef = useRef(null)
   const rightUrlRef = useRef(null)
@@ -71,6 +76,7 @@ function App() {
   useEffect(() => {
     offscreenLeftRef.current = document.createElement('canvas')
     offscreenRightRef.current = document.createElement('canvas')
+    offscreenMismatchRef.current = document.createElement('canvas')
   }, [])
 
   useEffect(() => {
@@ -165,8 +171,12 @@ function App() {
       const overlay = overlayRef.current
       if (overlay) {
         const ctx = overlay.getContext('2d')
-        ctx?.clearRect(0, 0, overlay.width, overlay.height)
+        if (ctx) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0)
+          ctx.clearRect(0, 0, overlay.width, overlay.height)
+        }
       }
+      lastMismatchRatioRef.current = 0
     }
   }, [mismatchEnabled])
 
@@ -193,7 +203,7 @@ function App() {
     const rightVideo = rightVideoRef.current
     if (!leftVideo || !rightVideo) return
     const diff = Math.abs(leftVideo.currentTime - rightVideo.currentTime)
-    if (diff > 0.05) {
+    if (diff > SYNC_TOLERANCE_SECONDS) {
       isSyncingRef.current = true
       rightVideo.currentTime = leftVideo.currentTime
       isSyncingRef.current = false
@@ -334,6 +344,11 @@ function App() {
     if (!leftVideo || !rightVideo || !overlay) return
     if (!leftVideo.videoWidth || !rightVideo.videoWidth) return
 
+    const leftTime = leftVideo.currentTime || 0
+    const rightTime = rightVideo.currentTime || 0
+    const timeDelta = Math.abs(leftTime - rightTime)
+    if (timeDelta > SYNC_TOLERANCE_SECONDS) return
+
     const targetWidth = Math.min(leftVideo.videoWidth, rightVideo.videoWidth)
     const targetHeight = Math.min(leftVideo.videoHeight, rightVideo.videoHeight)
 
@@ -356,11 +371,36 @@ function App() {
     const overlayCtx = overlay.getContext('2d')
     if (!overlayCtx) return
 
-    overlay.width = targetWidth
-    overlay.height = targetHeight
+    const areaRect = compareAreaRef.current?.getBoundingClientRect()
+    if (!areaRect?.width || !areaRect?.height) return
+
+    const devicePixelRatio = window.devicePixelRatio || 1
+    const overlayBitmapWidth = Math.max(
+      1,
+      Math.round(areaRect.width * devicePixelRatio),
+    )
+    const overlayBitmapHeight = Math.max(
+      1,
+      Math.round(areaRect.height * devicePixelRatio),
+    )
+
+    if (
+      overlay.width !== overlayBitmapWidth ||
+      overlay.height !== overlayBitmapHeight
+    ) {
+      overlay.width = overlayBitmapWidth
+      overlay.height = overlayBitmapHeight
+    }
+
+    const fitScale = Math.min(areaRect.width / targetWidth, areaRect.height / targetHeight)
+    const videoDrawWidth = targetWidth * fitScale
+    const videoDrawHeight = targetHeight * fitScale
+    const videoDrawLeft = (areaRect.width - videoDrawWidth) / 2
+    const videoDrawTop = (areaRect.height - videoDrawHeight) / 2
 
     const output = overlayCtx.createImageData(targetWidth, targetHeight)
     const total = leftData.data.length
+    let mismatchCount = 0
     for (let i = 0; i < total; i += 4) {
       const rDiff = Math.abs(leftData.data[i] - rightData.data[i])
       const gDiff = Math.abs(leftData.data[i + 1] - rightData.data[i + 1])
@@ -368,6 +408,7 @@ function App() {
       const delta = (rDiff + gDiff + bDiff) / (3 * 255)
 
       if (delta > threshold) {
+        mismatchCount += 1
         if (mismatchMode === 'binary') {
           output.data[i] = 255
           output.data[i + 1] = 0
@@ -385,7 +426,34 @@ function App() {
       }
     }
 
-    overlayCtx.putImageData(output, 0, 0)
+    const totalPixels = targetWidth * targetHeight
+    const mismatchRatio = totalPixels > 0 ? mismatchCount / totalPixels : 0
+    const previousMismatchRatio = lastMismatchRatioRef.current
+    const isTransientSpike =
+      mismatchRatio >= SPIKE_MISMATCH_RATIO &&
+      previousMismatchRatio <= PRE_SPIKE_MISMATCH_RATIO
+
+    lastMismatchRatioRef.current = mismatchRatio
+
+    if (isTransientSpike) return
+
+    const mismatchCanvas = offscreenMismatchRef.current
+    if (!mismatchCanvas) return
+    mismatchCanvas.width = targetWidth
+    mismatchCanvas.height = targetHeight
+    const mismatchCtx = mismatchCanvas.getContext('2d')
+    if (!mismatchCtx) return
+    mismatchCtx.putImageData(output, 0, 0)
+
+    overlayCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+    overlayCtx.clearRect(0, 0, areaRect.width, areaRect.height)
+    overlayCtx.drawImage(
+      mismatchCanvas,
+      videoDrawLeft,
+      videoDrawTop,
+      videoDrawWidth,
+      videoDrawHeight,
+    )
   }
 
   const compareTransform = {
