@@ -1,0 +1,122 @@
+.live-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.live-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.live-form-header h2 {
+  margin: 0;
+}
+
+.live-collapse-button {
+  width: 2rem;
+  height: 2rem;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(207, 211, 223, 0.4);
+  background: rgba(207, 211, 223, 0.12);
+  color: #e8eaf1;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.live-collapse-button:hover {
+  background: rgba(207, 211, 223, 0.2);
+  border-color: rgba(207, 211, 223, 0.65);
+  color: #fff;
+}
+
+.live-collapse-button:focus-visible {
+  outline: 2px solid rgba(207, 211, 223, 0.5);
+  outline-offset: 2px;
+}
+
+.live-collapse-icon {
+  display: inline-block;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 150ms ease;
+}
+
+.live-collapse-button.is-collapsed .live-collapse-icon {
+  transform: rotate(180deg);
+}
+
+.live-collapsed-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.88rem;
+  color: #cfd3df;
+}
+
+.live-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.live-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.live-field span {
+  font-size: 0.88rem;
+  color: #d6d8e1;
+}
+
+.live-field input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(7, 10, 19, 0.95);
+  color: #f5f5f7;
+  padding: 0.65rem 0.8rem;
+}
+
+.live-load-button {
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  background: #ff4757;
+  color: #fff;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.live-errors {
+  border: 1px solid rgba(255, 71, 87, 0.4);
+  background: rgba(255, 71, 87, 0.12);
+  color: #ffd4d8;
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+}
+
+.live-errors p {
+  margin: 0;
+}
+
+.live-loaded-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.85rem;
+  color: #c4c8d4;
+}

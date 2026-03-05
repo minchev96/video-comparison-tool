@@ -1,16 +1,26 @@
 import '../styles/TopBar.css'
 
-function TopBar({ bothLoaded, fps }) {
+function TopBar({ sourceMode, onGoFiles, onGoLive }) {
   return (
     <header className="top-bar">
-      <div>
+      <div className="top-bar-main">
         <h1>Video Comparison Tool</h1>
-      </div>
-      <div className="status-badges">
-        <span className={bothLoaded ? 'badge ready' : 'badge idle'}>
-          {bothLoaded ? 'Ready' : 'Waiting'}
-        </span>
-        <span className="badge">FPS: {fps}</span>
+        <div className="top-bar-nav" role="navigation" aria-label="Comparison Views">
+          <button
+            type="button"
+            className={`top-nav-button ${sourceMode === 'file' ? 'active' : ''}`}
+            onClick={onGoFiles}
+          >
+            Video Compare
+          </button>
+          <button
+            type="button"
+            className={`top-nav-button ${sourceMode === 'url' ? 'active' : ''}`}
+            onClick={onGoLive}
+          >
+            Live
+          </button>
+        </div>
       </div>
     </header>
   )

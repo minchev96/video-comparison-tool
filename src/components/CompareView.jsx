@@ -19,6 +19,7 @@ function CompareView({
   onClick,
   onContextMenu,
   setVideoMeta,
+  onVideoError = () => {},
   handleTimeUpdate,
   isPlaying,
   togglePlay,
@@ -30,6 +31,7 @@ function CompareView({
   onSeekEnd,
   formatTime,
   compareTransform,
+  placeholderText = 'Drop two videos to start comparing.',
 }) {
   return (
     <section
@@ -52,6 +54,7 @@ function CompareView({
               onLoadedMetadata={(event) =>
                 setVideoMeta('right', event.currentTarget)
               }
+              onError={() => onVideoError('right')}
               onTimeUpdate={handleTimeUpdate}
               playsInline
               muted
@@ -67,6 +70,7 @@ function CompareView({
                 onLoadedMetadata={(event) =>
                   setVideoMeta('left', event.currentTarget)
                 }
+                onError={() => onVideoError('left')}
                 onTimeUpdate={handleTimeUpdate}
                 playsInline
                 muted
@@ -82,7 +86,7 @@ function CompareView({
 
         {!bothLoaded && (
           <div className="compare-placeholder">
-            Drop two videos to start comparing.
+            {placeholderText}
           </div>
         )}
       </div>

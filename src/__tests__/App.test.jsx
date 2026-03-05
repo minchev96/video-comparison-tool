@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import App from '../App.jsx'
 
 const buildDataTransfer = (file) => ({
@@ -9,10 +10,19 @@ const buildDataTransfer = (file) => ({
 })
 
 describe('App', () => {
+  const renderWithRoute = (route = '/') => {
+    render(
+      <MemoryRouter initialEntries={[route]}>
+        <App />
+      </MemoryRouter>,
+    )
+  }
+
   it('renders core layout', () => {
-    render(<App />)
+    renderWithRoute('/')
 
     expect(screen.getByText('Video Comparison Tool')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Live' })).toBeInTheDocument()
     expect(screen.getByText('Left Source')).toBeInTheDocument()
     expect(screen.getByText('Right Source')).toBeInTheDocument()
     expect(screen.getByText('Comparison Controls')).toBeInTheDocument()
@@ -20,7 +30,7 @@ describe('App', () => {
   })
 
   it('shows warning when both sources share the same name', () => {
-    render(<App />)
+    renderWithRoute('/')
 
     const leftDrop = screen.getByText('Left Source').closest('label')
     const rightDrop = screen.getByText('Right Source').closest('label')
@@ -35,9 +45,17 @@ describe('App', () => {
   })
 
   it('disables playback controls until both sources are loaded', () => {
-    render(<App />)
+    renderWithRoute('/')
 
     const playButton = screen.getByRole('button', { name: 'Play' })
     expect(playButton).toBeDisabled()
+  })
+
+  it('renders live page inputs when route is live', () => {
+    renderWithRoute('/live')
+
+    expect(screen.getByText('Live Website Comparison')).toBeInTheDocument()
+    expect(screen.getByLabelText('URL 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('URL 2')).toBeInTheDocument()
   })
 })
