@@ -1,14 +1,10 @@
-import '../styles/ComparisonControls.css'
+import "../styles/ComparisonControls.css";
 
 function ComparisonControls({
-  leftGhost,
-  setLeftGhost,
   mismatchEnabled,
   setMismatchEnabled,
   threshold,
   setThreshold,
-  mismatchMode,
-  setMismatchMode,
   zoom,
   setZoom,
   bothLoaded,
@@ -17,15 +13,6 @@ function ComparisonControls({
     <div className="panel-block">
       <h2>Comparison Controls</h2>
       <div className="control-grid">
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={leftGhost}
-            onChange={(event) => setLeftGhost(event.target.checked)}
-          />
-          Left source ghost (50% opacity)
-        </label>
-
         <label className="toggle">
           <input
             type="checkbox"
@@ -50,34 +37,6 @@ function ComparisonControls({
         </div>
 
         <div className="control-group">
-          <span>Mismatch mode</span>
-          <div className="radio-group">
-            <label>
-              <input
-                type="radio"
-                name="mismatch-mode"
-                value="binary"
-                checked={mismatchMode === 'binary'}
-                onChange={() => setMismatchMode('binary')}
-                disabled={!mismatchEnabled}
-              />
-              Binary
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="mismatch-mode"
-                value="heatmap"
-                checked={mismatchMode === 'heatmap'}
-                onChange={() => setMismatchMode('heatmap')}
-                disabled={!mismatchEnabled}
-              />
-              Heatmap
-            </label>
-          </div>
-        </div>
-
-        <div className="control-group">
           <span>Zoom</span>
           <input
             type="range"
@@ -90,7 +49,7 @@ function ComparisonControls({
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default ComparisonControls
+export default ComparisonControls;

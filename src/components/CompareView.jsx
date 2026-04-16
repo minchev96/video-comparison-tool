@@ -1,5 +1,5 @@
-import PlaybackControls from './PlaybackControls.jsx'
-import '../styles/CompareView.css'
+import PlaybackControls from "./PlaybackControls.jsx";
+import "../styles/CompareView.css";
 
 function CompareView({
   compareWrapperRef,
@@ -9,7 +9,6 @@ function CompareView({
   overlayRef,
   rightSrc,
   leftSrc,
-  leftGhost,
   mismatchEnabled,
   sliderPos,
   bothLoaded,
@@ -31,20 +30,22 @@ function CompareView({
   onSeekEnd,
   formatTime,
   compareTransform,
-  placeholderText = 'Drop two videos to start comparing.',
+  placeholderText = "Drop two videos to start comparing.",
 }) {
   return (
-    <section
-      className="compare-wrapper"
-      ref={compareWrapperRef}
-      onMouseMove={onMouseMove}
-      onMouseDown={onMouseDown}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-    >
+    <div className="compare-wrapper" ref={compareWrapperRef}>
       <div className="compare-area" ref={compareAreaRef}>
+        <button
+          type="button"
+          className="compare-hitbox"
+          onMouseMove={onMouseMove}
+          onMouseDown={onMouseDown}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onClick={onClick}
+          onContextMenu={onContextMenu}
+          aria-label="Comparison interaction surface"
+        />
         <div className="compare-layer">
           <div className="compare-transform" style={compareTransform}>
             <video
@@ -52,9 +53,9 @@ function CompareView({
               src={rightSrc || undefined}
               className="video-base"
               onLoadedMetadata={(event) =>
-                setVideoMeta('right', event.currentTarget)
+                setVideoMeta("right", event.currentTarget)
               }
-              onError={() => onVideoError('right')}
+              onError={() => onVideoError("right")}
               onTimeUpdate={handleTimeUpdate}
               playsInline
               muted
@@ -66,11 +67,11 @@ function CompareView({
               <video
                 ref={leftVideoRef}
                 src={leftSrc || undefined}
-                className={`video-top ${leftGhost ? 'ghost' : ''}`}
+                className="video-top"
                 onLoadedMetadata={(event) =>
-                  setVideoMeta('left', event.currentTarget)
+                  setVideoMeta("left", event.currentTarget)
                 }
-                onError={() => onVideoError('left')}
+                onError={() => onVideoError("left")}
                 onTimeUpdate={handleTimeUpdate}
                 playsInline
                 muted
@@ -78,16 +79,19 @@ function CompareView({
             </div>
             <canvas
               ref={overlayRef}
-              className={`mismatch-overlay ${mismatchEnabled ? 'visible' : ''}`}
+              className={`mismatch-overlay ${mismatchEnabled ? "visible" : ""}`}
             />
-            <div className="slider-line" style={{ left: `${sliderPos * 100}%` }} />
+            {!mismatchEnabled && (
+              <div
+                className="slider-line"
+                style={{ left: `${sliderPos * 100}%` }}
+              />
+            )}
           </div>
         </div>
 
         {!bothLoaded && (
-          <div className="compare-placeholder">
-            {placeholderText}
-          </div>
+          <div className="compare-placeholder">{placeholderText}</div>
         )}
       </div>
 
@@ -103,8 +107,8 @@ function CompareView({
         formatTime={formatTime}
         disabled={!bothLoaded}
       />
-    </section>
-  )
+    </div>
+  );
 }
 
-export default CompareView
+export default CompareView;

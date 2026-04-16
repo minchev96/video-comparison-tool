@@ -33,31 +33,66 @@
   outline: 2px solid rgba(255, 71, 87, 0.55);
 }
 
-.website-frame {
+.website-iframe {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  border: none;
+}
+
+.website-layer-base {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.website-layer-overlay {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .website-frame.mismatch-layer {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+  z-index: 10;
 }
 
 .website-compare-overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
 }
 
-.website-slider-line {
+.website-compare-overlay .website-iframe {
+  width: 100%;
+  height: 100%;
+}
+
+.website-slider-handle {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: #ff4757;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  width: 20px;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  z-index: 12;
+  /* visible line in the centre */
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 1px),
+    #ff4757 calc(50% - 1px),
+    #ff4757 calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+  touch-action: none;
+}
+
+/* While slider is being dragged, iframes must not eat events */
+.website-stage.dragging .website-iframe {
   pointer-events: none;
 }
 
@@ -84,17 +119,6 @@
   width: 180px;
 }
 
-.website-mode-group {
-  display: inline-flex;
-  gap: 0.8rem;
-}
-
-.website-mode-group label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
 .website-quality-group {
   display: inline-flex;
   gap: 0.8rem;
@@ -104,6 +128,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.website-mismatch-stat {
+  color: #ff4757;
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .website-placeholder {

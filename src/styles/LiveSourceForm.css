@@ -29,13 +29,21 @@
   border-radius: 999px;
   padding: 0;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
 }
 
 .live-collapse-button:hover {
   background: rgba(207, 211, 223, 0.2);
   border-color: rgba(207, 211, 223, 0.65);
   color: #fff;
+}
+
+.live-collapse-button:active {
+  transform: scale(0.96);
 }
 
 .live-collapse-button:focus-visible {
@@ -45,15 +53,19 @@
 
 .live-collapse-icon {
   display: inline-block;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
+  width: 0.56rem;
+  height: 0.56rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(225deg);
   transform-origin: center;
-  transition: transform 150ms ease;
+  margin-top: 0.15rem;
+  transition: transform 170ms ease;
 }
 
 .live-collapse-button.is-collapsed .live-collapse-icon {
-  transform: rotate(180deg);
+  transform: rotate(45deg);
+  margin-top: -0.05rem;
 }
 
 .live-collapsed-summary {

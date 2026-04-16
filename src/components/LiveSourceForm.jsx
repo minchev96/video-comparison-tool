@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import '../styles/LiveSourceForm.css'
+import { useState } from "react";
+import "../styles/LiveSourceForm.css";
 
 function LiveSourceForm({
   onApplyUrls,
@@ -10,34 +10,37 @@ function LiveSourceForm({
   collapsed = false,
   onToggleCollapse,
   disabled = false,
-  title = 'Live Comparison',
-  placeholders = ['https://example.com/left-source.mp4', 'https://example.com/right-source.mp4'],
+  title = "Live Comparison",
+  placeholders = [
+    "https://example.com/left-source.mp4",
+    "https://example.com/right-source.mp4",
+  ],
 }) {
-  const [leftUrl, setLeftUrl] = useState('')
-  const [rightUrl, setRightUrl] = useState('')
-  const [formError, setFormError] = useState('')
+  const [leftUrl, setLeftUrl] = useState("");
+  const [rightUrl, setRightUrl] = useState("");
+  const [formError, setFormError] = useState("");
 
   const handleApply = () => {
-    const leftTrimmed = leftUrl.trim()
-    const rightTrimmed = rightUrl.trim()
+    const leftTrimmed = leftUrl.trim();
+    const rightTrimmed = rightUrl.trim();
 
     if (!leftTrimmed || !rightTrimmed) {
-      setFormError('Please provide both URLs before loading.')
-      return
+      setFormError("Please provide both URLs before loading.");
+      return;
     }
 
-    setFormError('')
+    setFormError("");
     if (!disabled) {
-      onApplyUrls(leftTrimmed, rightTrimmed)
+      onApplyUrls(leftTrimmed, rightTrimmed);
     }
-  }
+  };
 
   const handleKeyDown = (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      handleApply()
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleApply();
     }
-  }
+  };
 
   return (
     <section className="live-form panel-block" aria-label="Live URL Inputs">
@@ -46,21 +49,19 @@ function LiveSourceForm({
         {onToggleCollapse && (
           <button
             type="button"
-            className={`live-collapse-button${collapsed ? ' is-collapsed' : ''}`}
+            className={`live-collapse-button${collapsed ? " is-collapsed" : ""}`}
             onClick={onToggleCollapse}
-            aria-label={collapsed ? 'Expand URL form' : 'Collapse URL form'}
+            aria-label={collapsed ? "Expand URL form" : "Collapse URL form"}
           >
-            <span className="live-collapse-icon" aria-hidden="true">
-              ^
-            </span>
+            <span className="live-collapse-icon" aria-hidden="true" />
           </button>
         )}
       </div>
 
       {collapsed ? (
         <div className="live-collapsed-summary" role="note">
-          <span>Left: {leftName || leftUrl || '--'}</span>
-          <span>Right: {rightName || rightUrl || '--'}</span>
+          <span>Left: {leftName || leftUrl || "--"}</span>
+          <span>Right: {rightName || rightUrl || "--"}</span>
         </div>
       ) : (
         <>
@@ -97,7 +98,7 @@ function LiveSourceForm({
               onClick={handleApply}
               disabled={disabled}
             >
-              {disabled ? 'Loading...' : 'Load URLs'}
+              {disabled ? "Loading..." : "Load URLs"}
             </button>
           </div>
 
@@ -113,12 +114,12 @@ function LiveSourceForm({
 
       {!collapsed && (leftName || rightName) && (
         <div className="live-loaded-names" role="note">
-          <span>Left: {leftName || '--'}</span>
-          <span>Right: {rightName || '--'}</span>
+          <span>Left: {leftName || "--"}</span>
+          <span>Right: {rightName || "--"}</span>
         </div>
       )}
     </section>
-  )
+  );
 }
 
-export default LiveSourceForm
+export default LiveSourceForm;
