@@ -503,9 +503,15 @@ const mirrorRuntime = (side) => {
     }
   }
 
+  const hintCache = new WeakMap();
+
   function hintOf(element) {
     if (!element) return null;
     element = pickTarget(element);
+    if (!element) return null;
+    const cached = hintCache.get(element);
+    if (cached) return cached;
+
     const classes = [];
     if (element.classList) {
       for (let i = 0; i < element.classList.length; i += 1) {
@@ -513,15 +519,18 @@ const mirrorRuntime = (side) => {
       }
     }
 
-    return {
+    // textContent doesn't trigger a layout/style flush (innerText does).
+    // The text is only used as a stability hint for replay, so the raw
+    // node text is equivalent for our purposes.
+    const hint = {
       id: element.id || "",
       tag: element.tagName ? element.tagName.toLowerCase() : "",
-      text: (element.innerText || element.textContent || "")
-        .trim()
-        .slice(0, 120),
+      text: (element.textContent || "").trim().slice(0, 120),
       classes: classes,
       path: buildPath(element),
     };
+    hintCache.set(element, hint);
+    return hint;
   }
 
   function findByHint(hint) {
@@ -608,12 +617,40 @@ const mirrorRuntime = (side) => {
     );
   });
 
+  // Coalesce wheel events into one postMessage per animation frame.
+  // Native wheel handlers fire 60+ times/sec during a scroll gesture and
+  // each postMessage round-trip to the parent + re-post to the sibling
+  // iframe is not free.
+  let wheelPending = null;
+  let wheelRaf = 0;
+
+  function flushWheel() {
+    wheelRaf = 0;
+    const buf = wheelPending;
+    wheelPending = null;
+    if (!buf) return;
+    try {
+      window.parent.postMessage(buf, "*");
+    } catch (_x) {}
+  }
+
   document.addEventListener(
     "wheel",
     (e) => {
       if (m) return;
-      window.parent.postMessage(
-        {
+      if (wheelPending && wheelPending.dm === e.deltaMode) {
+        wheelPending.dx += e.deltaX;
+        wheelPending.dy += e.deltaY;
+        wheelPending.cx = e.clientX;
+        wheelPending.cy = e.clientY;
+        wheelPending.sentAt = Date.now();
+      } else {
+        if (wheelPending) {
+          try {
+            window.parent.postMessage(wheelPending, "*");
+          } catch (_x) {}
+        }
+        wheelPending = {
           __mirrorWheel: true,
           dx: e.deltaX,
           dy: e.deltaY,
@@ -621,11 +658,13 @@ const mirrorRuntime = (side) => {
           cx: e.clientX,
           cy: e.clientY,
           sentAt: Date.now(),
-        },
-        "*",
-      );
+        };
+      }
+      if (!wheelRaf) {
+        wheelRaf = requestAnimationFrame(flushWheel);
+      }
     },
-    true,
+    { capture: true, passive: true },
   );
 
   ["keydown", "keyup", "keypress"].forEach((type) => {

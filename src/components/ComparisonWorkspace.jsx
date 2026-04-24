@@ -9,7 +9,7 @@ import QualityChecks from "./QualityChecks.jsx";
 import TopBar from "./TopBar.jsx";
 import WarningBanner from "./WarningBanner.jsx";
 
-const FPS_CAP = 40;
+const FPS_CAP = 50;
 const STEP_SECONDS = 1;
 const SYNC_TOLERANCE_SECONDS = 1 / 60;
 const SPIKE_MISMATCH_RATIO = 0.8;

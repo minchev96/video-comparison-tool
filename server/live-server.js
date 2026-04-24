@@ -18,9 +18,40 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import https from "node:https";
+import zlib from "node:zlib";
 import express from "express";
 import cors from "cors";
 import { getMirrorScript, getPatchScript } from "./injected-scripts.js";
+
+// Keep-alive agent pool. Without this, the default global agent opens a
+// fresh TCP+TLS connection for every asset request the proxied site makes
+// (images, JS chunks, fonts, API calls) which dominates initial-load time
+// for modern JS-heavy websites.
+const proxyAgents = new Map();
+const getProxyAgent = (isHttps, host) => {
+  const key = `${isHttps ? "https" : "http"}:${host}`;
+  let agent = proxyAgents.get(key);
+  if (!agent) {
+    const AgentCtor = isHttps ? https.Agent : http.Agent;
+    agent = new AgentCtor({
+      keepAlive: true,
+      keepAliveMsecs: 15000,
+      maxSockets: 64,
+      maxFreeSockets: 16,
+      ...(isHttps ? { rejectUnauthorized: false } : {}),
+    });
+    proxyAgents.set(key, agent);
+  }
+  return agent;
+};
+
+const createDecoder = (contentEncoding) => {
+  const value = String(contentEncoding || "").toLowerCase();
+  if (value === "gzip" || value === "x-gzip") return zlib.createGunzip();
+  if (value === "br") return zlib.createBrotliDecompress();
+  if (value === "deflate") return zlib.createInflate();
+  return null;
+};
 
 const PORT = 8787;
 const MAX_SESSIONS = 5;
@@ -334,9 +365,12 @@ const proxyHandler = (side) => (req, res) => {
   outHeaders.origin = origin;
   delete outHeaders.referer;
   delete outHeaders.cookie;
-  // Remove accept-encoding to get uncompressed responses we can rewrite
-  // (simpler than handling gzip/brotli for HTML content-rewriting)
-  delete outHeaders["accept-encoding"];
+  // Prefer compressed upstream responses; we only decompress when we need
+  // to rewrite HTML. Non-HTML (JS, CSS, fonts, images, WASM) is streamed
+  // through still encoded so the client browser decodes natively.
+  if (!outHeaders["accept-encoding"]) {
+    outHeaders["accept-encoding"] = "gzip, br, deflate";
+  }
 
   const method = String(req.method || "GET").toUpperCase();
   const shouldReadBody = !["GET", "HEAD", "OPTIONS"].includes(method);
@@ -401,6 +435,7 @@ const proxyHandler = (side) => (req, res) => {
         method: req.method,
         headers: requestHeaders,
         rejectUnauthorized: false,
+        agent: getProxyAgent(isHttps, targetUrl.host),
       },
       (proxyRes) => {
         // Strip headers that block iframe embedding
@@ -415,13 +450,38 @@ const proxyHandler = (side) => (req, res) => {
         const contentType = (headers["content-type"] || "").toLowerCase();
         const isHtml = contentType.includes("text/html");
 
+        // Choose a source stream that's already decoded when we need to
+        // inspect/rewrite the body (HTML or left-side bet capture).
+        const needsDecodedBody =
+          (side === "left" && betMeta.isBet) || isHtml;
+        const decoder = needsDecodedBody
+          ? createDecoder(proxyRes.headers["content-encoding"])
+          : null;
+        const bodyStream = decoder ? proxyRes.pipe(decoder) : proxyRes;
+        if (decoder) {
+          decoder.on("error", (err) => {
+            console.error(`[proxy] ${side} decode error:`, err.message);
+            if (!res.headersSent) {
+              res
+                .status(502)
+                .json({ error: "Upstream decode failed", details: err.message });
+            } else {
+              try {
+                res.end();
+              } catch {
+                // ignore
+              }
+            }
+          });
+        }
+
         if (side === "left" && betMeta.isBet) {
           betDebugLog(
             `left bet request path=${betMeta.pathKey} fp=${betMeta.fingerprint.slice(0, 10)} bytes=${requestBody.length}`,
           );
           const chunks = [];
-          proxyRes.on("data", (chunk) => chunks.push(chunk));
-          proxyRes.on("end", () => {
+          bodyStream.on("data", (chunk) => chunks.push(chunk));
+          bodyStream.on("end", () => {
             const body = Buffer.concat(chunks);
             const replayHeaders = sanitizeReplayHeaders(headers, body.length);
             storeLeftBetResponse(session, betMeta, {
@@ -443,8 +503,8 @@ const proxyHandler = (side) => (req, res) => {
           delete headers["transfer-encoding"];
 
           const chunks = [];
-          proxyRes.on("data", (chunk) => chunks.push(chunk));
-          proxyRes.on("end", () => {
+          bodyStream.on("data", (chunk) => chunks.push(chunk));
+          bodyStream.on("end", () => {
             let body = Buffer.concat(chunks).toString("utf-8");
 
             // Rewrite absolute URLs pointing to the target origin so they go

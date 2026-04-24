@@ -8,16 +8,7 @@ import "../styles/LiveWebsiteCompare.css";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const DIFF_TARGET_INTERVAL_MS = 66;
-const DIFF_MAX_INTERVAL_MS = 110;
-const DIFF_TARGET_SAMPLES_IDLE = 120000;
-const DIFF_TARGET_SAMPLES_ACTIVE = 70000;
-const DIFF_ACTIVE_WINDOW_MS = 400;
-const DIFF_MOTION_DELTA_THRESHOLD = 0.08;
-const DIFF_ONE_FRAME_SYNC_COMPENSATION = true;
-const DIFF_TWO_FRAME_SYNC_COMPENSATION = true;
-const MISMATCH_MEDIAN_WINDOW = 5;
-const MISMATCH_SPIKE_DELTA_PCT = 8;
-const MISMATCH_SPIKE_CONFIRM_FRAMES = 2;
+const OCCLUSION_REFRESH_MIN_MS = 250;
 
 function LiveWebsiteCompare() {
   const navigate = useNavigate();
@@ -155,7 +146,6 @@ function LiveWebsiteCompare() {
       draggingRef.current = true;
       slider.setPointerCapture(e.pointerId);
       updatePos(e.clientX);
-      // While dragging, disable iframe pointer events so mousemove works
       container.classList.add("dragging");
     };
 
@@ -190,18 +180,35 @@ function LiveWebsiteCompare() {
   // The server injects a mirror script into each proxied page (runs before
   // game code).  That script forwards native events to the parent via
   // postMessage.  Here we relay those messages to the OTHER iframe.
+  //
+  // Wheel events are coalesced to one postMessage per animation frame
+  // because they fire 60+ Hz during a scroll gesture — relaying each one
+  // doubles the main-thread message work and queues up behind any layout.
   useEffect(() => {
+    let pendingWheel = null;
+    let wheelRaf = 0;
+
+    const flushWheel = () => {
+      wheelRaf = 0;
+      const buf = pendingWheel;
+      pendingWheel = null;
+      if (!buf) return;
+      const rightWin = rightIframeRef.current?.contentWindow;
+      if (!rightWin) return;
+      buf.__mirrorWheelReplay = true;
+      rightWin.postMessage(buf, "*");
+    };
+
     const handleMessage = (msg) => {
       const d = msg.data;
       if (!d) return;
 
-      // Which iframe sent the message?  Forward to the other one.
       const leftWin = leftIframeRef.current?.contentWindow;
       const rightWin = rightIframeRef.current?.contentWindow;
       if (!leftWin || !rightWin) return;
 
       if (msg.source !== leftWin) return;
-      const target = rightWin;
+
       const relayDelay =
         typeof d.sentAt === "number" ? Math.max(0, Date.now() - d.sentAt) : -1;
 
@@ -210,17 +217,48 @@ function LiveWebsiteCompare() {
       if (d.__mirror) {
         updateRelayDiagnostics(relayDelay, "mirror");
         lastMirroredEventAtRef.current = performance.now();
-        target.postMessage({ __mirrorReplay: true, ...d }, "*");
+        // Mutate in place — the sender won't read this object again and
+        // we skip a full structured-clone of hint text/classes.
+        d.__mirrorReplay = true;
+        rightWin.postMessage(d, "*");
+        return;
       }
       if (d.__mirrorWheel) {
         updateRelayDiagnostics(relayDelay, "wheel");
         lastMirroredEventAtRef.current = performance.now();
-        target.postMessage({ __mirrorWheelReplay: true, ...d }, "*");
+        if (pendingWheel && pendingWheel.dm === d.dm) {
+          pendingWheel.dx += d.dx;
+          pendingWheel.dy += d.dy;
+          pendingWheel.cx = d.cx;
+          pendingWheel.cy = d.cy;
+          pendingWheel.sentAt = d.sentAt;
+        } else {
+          if (pendingWheel) {
+            // Different delta mode — flush previous batch synchronously.
+            pendingWheel.__mirrorWheelReplay = true;
+            rightWin.postMessage(pendingWheel, "*");
+          }
+          pendingWheel = {
+            __mirrorWheel: true,
+            dx: d.dx,
+            dy: d.dy,
+            dm: d.dm,
+            cx: d.cx,
+            cy: d.cy,
+            sentAt: d.sentAt,
+          };
+        }
+        if (!wheelRaf) {
+          wheelRaf = requestAnimationFrame(flushWheel);
+        }
+        return;
       }
       if (d.__mirrorKey) {
         updateRelayDiagnostics(relayDelay, "key");
         lastMirroredEventAtRef.current = performance.now();
-        target.postMessage({ __mirrorKeyReplay: true, ...d }, "*");
+        d.__mirrorKeyReplay = true;
+        rightWin.postMessage(d, "*");
+        return;
       }
       if (d.__mirrorInput) {
         updateRelayDiagnostics(relayDelay, "input");
@@ -228,20 +266,27 @@ function LiveWebsiteCompare() {
           setSliderPos(1);
         }
         lastMirroredEventAtRef.current = performance.now();
-        target.postMessage({ __mirrorInputReplay: true, ...d }, "*");
+        d.__mirrorInputReplay = true;
+        rightWin.postMessage(d, "*");
+        return;
       }
       if (d.__betCapture) {
         updateRelayDiagnostics(relayDelay, "betCapture");
         lastMirroredEventAtRef.current = performance.now();
-        target.postMessage({ __betCaptureReplay: true, ...d }, "*");
+        d.__betCaptureReplay = true;
+        rightWin.postMessage(d, "*");
       }
     };
 
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (wheelRaf) cancelAnimationFrame(wheelRaf);
+      pendingWheel = null;
+    };
   }, [updateRelayDiagnostics]);
 
-  // ── Canvas-based pixel diff ───────────────────────────────────────
+  // ── Pixel diff (worker-driven) ────────────────────────────────────
   useEffect(() => {
     if (!mismatchEnabled || !iframesLoaded) {
       diagnosticsRef.current.diff.blankState =
@@ -262,23 +307,9 @@ function LiveWebsiteCompare() {
     const runId = mismatchLogSeqRef.current;
     diagnosticsRef.current.diff.runId = runId;
 
-    let diffSeq = 0;
-    let pdbChecked = false; // one-time preserveDrawingBuffer check
+    let pdbChecked = false;
     let leftPdb = null;
     let rightPdb = null;
-    let stableMismatchPct = -1;
-    let pendingSpikeCount = 0;
-    let pendingSpikeTarget = -1;
-    const mismatchHistory = [];
-
-    const medianOf = (values) => {
-      if (!values.length) return 0;
-      const sorted = [...values].sort((a, b) => a - b);
-      const middle = Math.floor(sorted.length / 2);
-      return sorted.length % 2
-        ? sorted[middle]
-        : (sorted[middle - 1] + sorted[middle]) / 2;
-    };
 
     const checkPreserveDrawingBuffer = (gameCanvas, label) => {
       try {
@@ -300,6 +331,21 @@ function LiveWebsiteCompare() {
       }
     };
 
+    // ── Occlusion cache ─────────────────────────────────────────────
+    // Replaces the old every-12-frames full DOM scan. The mask is a flat
+    // Uint8Array sized to the downscaled diff dimensions; the worker does
+    // one index lookup per sampled pixel.
+    let cachedOcclusionMask = null;
+    let cachedMaskDims = { dw: 0, dh: 0 };
+    let cachedRectCount = 0;
+    let lastOcclusionRefresh = 0;
+    let occlusionDirty = true;
+    const FAST_OCCLUDER_SEL =
+      '[style*="position: fixed"],[style*="position:fixed"],' +
+      '[style*="position: sticky"],[style*="position:sticky"],' +
+      '[class*="modal"],[class*="overlay"],[class*="popup"],' +
+      "[data-modal],dialog";
+
     const collectOcclusionRects = (win, targetW, targetH) => {
       const rects = [];
       try {
@@ -316,7 +362,10 @@ function LiveWebsiteCompare() {
         const scaleX = targetW / viewW;
         const scaleY = targetH / viewH;
 
-        const candidates = doc.body.querySelectorAll("*");
+        let candidates = doc.body.querySelectorAll(FAST_OCCLUDER_SEL);
+        if (candidates.length === 0) {
+          candidates = doc.body.querySelectorAll("*");
+        }
         const maxScan = Math.min(candidates.length, 3000);
 
         for (let idx = 0; idx < maxScan; idx += 1) {
@@ -364,36 +413,134 @@ function LiveWebsiteCompare() {
       return rects;
     };
 
-    const isOccluded = (x, y, rects) => {
-      for (const rect of rects) {
-        if (x >= rect.x1 && x < rect.x2 && y >= rect.y1 && y < rect.y2) {
-          return true;
+    const buildOcclusionMask = (dw, dh) => {
+      if (
+        !occlusionDirty &&
+        cachedOcclusionMask &&
+        cachedMaskDims.dw === dw &&
+        cachedMaskDims.dh === dh
+      ) {
+        return { mask: cachedOcclusionMask, count: cachedRectCount };
+      }
+      const now = performance.now();
+      if (
+        !occlusionDirty &&
+        cachedOcclusionMask &&
+        now - lastOcclusionRefresh < OCCLUSION_REFRESH_MIN_MS
+      ) {
+        return { mask: cachedOcclusionMask, count: cachedRectCount };
+      }
+      lastOcclusionRefresh = now;
+      occlusionDirty = false;
+
+      const leftWin = leftIframe.contentWindow;
+      const rightWin = rightIframe.contentWindow;
+      const leftRects = leftWin ? collectOcclusionRects(leftWin, dw, dh) : [];
+      const rightRects = rightWin
+        ? collectOcclusionRects(rightWin, dw, dh)
+        : [];
+      const allRects = leftRects.concat(rightRects);
+
+      const mask = new Uint8Array(dw * dh);
+      for (let r = 0; r < allRects.length; r++) {
+        const { x1, y1, x2, y2 } = allRects[r];
+        for (let y = y1; y < y2; y++) {
+          const rowStart = y * dw;
+          for (let x = x1; x < x2; x++) {
+            mask[rowStart + x] = 1;
+          }
         }
       }
-      return false;
+      cachedOcclusionMask = mask;
+      cachedMaskDims = { dw, dh };
+      cachedRectCount = allRects.length;
+      return { mask, count: allRects.length };
     };
 
-    // Reusable temp canvases (avoid creating per-frame)
-    const tmpLeft = document.createElement("canvas");
-    const ctxLeft = tmpLeft.getContext("2d", { willReadFrequently: true });
-    const tmpRight = document.createElement("canvas");
-    const ctxRight = tmpRight.getContext("2d", { willReadFrequently: true });
-    let cachedLeftOccluders = [];
-    let cachedRightOccluders = [];
-    let prevLeftLuma = null;
-    let prevRightLuma = null;
-    let prevPrevLeftLuma = null;
-    let prevPrevRightLuma = null;
-    let hasPrevFrame = false;
-    let hasPrevPrevFrame = false;
-    let framesProcessed = 0;
-    let loadSheddingFactor = 1;
+    const invalidateOcclusion = () => {
+      occlusionDirty = true;
+    };
 
-    const computeDiff = () => {
-      if (cancelled) return;
-      const seq = ++diffSeq;
-      const t0 = performance.now();
+    // Wire invalidation to scroll/resize + DOM mutations (debounced by the
+    // OCCLUSION_REFRESH_MIN_MS check inside buildOcclusionMask).
+    const mutationObservers = [];
+    const teardownObservers = [];
+    const attachObservers = (win) => {
+      try {
+        const doc = win?.document;
+        if (!doc?.body) return;
+        const mo = new win.MutationObserver(invalidateOcclusion);
+        mo.observe(doc.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["class", "style"],
+        });
+        mutationObservers.push(mo);
+        const onScroll = invalidateOcclusion;
+        const onResize = invalidateOcclusion;
+        win.addEventListener("scroll", onScroll, {
+          capture: true,
+          passive: true,
+        });
+        win.addEventListener("resize", onResize);
+        teardownObservers.push(() => {
+          mo.disconnect();
+          win.removeEventListener("scroll", onScroll, { capture: true });
+          win.removeEventListener("resize", onResize);
+        });
+      } catch {
+        // cross-origin or not-ready; best-effort only
+      }
+    };
+    attachObservers(leftIframe.contentWindow);
+    attachObservers(rightIframe.contentWindow);
 
+    // ── Worker wiring ───────────────────────────────────────────────
+    const worker = new Worker(
+      new URL("../workers/diffWorker.js", import.meta.url),
+      { type: "module" },
+    );
+
+    const ctx = canvas.getContext("2d");
+    let workerBusy = false;
+    let nextFrameId = 0;
+
+    worker.onmessage = (event) => {
+      const data = event.data;
+      if (!data) return;
+      if (data.type === "diff-result") {
+        workerBusy = false;
+        if (data.intervalMs) targetIntervalMs = data.intervalMs;
+        const stats = data.stats;
+        const bitmap = data.bitmap;
+        if (bitmap) {
+          if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+          if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(bitmap, 0, 0);
+          bitmap.close?.();
+        }
+        diagnosticsRef.current.diff = {
+          runId,
+          ...stats,
+          leftPreserveDrawingBuffer: leftPdb,
+          rightPreserveDrawingBuffer: rightPdb,
+          updatedAt: Date.now(),
+        };
+        setMismatchPercent(stats.mismatchPct);
+      } else if (data.type === "diff-error") {
+        workerBusy = false;
+        if (data.intervalMs) targetIntervalMs = data.intervalMs;
+        diagnosticsRef.current.latestError = data.error || "worker-error";
+        diagnosticsRef.current.diff.blankState = "error";
+        diagnosticsRef.current.diff.updatedAt = Date.now();
+        setMismatchPercent(-1);
+      }
+    };
+
+    const submitFrame = async () => {
+      if (cancelled || workerBusy) return;
       try {
         const leftWin = leftIframe.contentWindow;
         const rightWin = rightIframe.contentWindow;
@@ -403,13 +550,11 @@ function LiveWebsiteCompare() {
         const rightCanvas = rightWin.document.querySelector("canvas");
         if (!leftCanvas || !rightCanvas) {
           diagnosticsRef.current.diff.blankState = `nocanvas:L=${!!leftCanvas},R=${!!rightCanvas}`;
-          diagnosticsRef.current.diff.frameSeq = seq;
           diagnosticsRef.current.diff.updatedAt = Date.now();
           setMismatchPercent(-1);
           return;
         }
 
-        // One-time: check if preserveDrawingBuffer was applied
         if (!pdbChecked) {
           pdbChecked = true;
           checkPreserveDrawingBuffer(leftCanvas, "left");
@@ -420,290 +565,60 @@ function LiveWebsiteCompare() {
         const sourceHeight = Math.min(leftCanvas.height, rightCanvas.height);
         if (!sourceWidth || !sourceHeight) return;
 
+        // Downscale selection must stay in sync with the worker's
+        // computation so the occlusion mask dimensions match. Mirror the
+        // logic here using the diagnostics loadShedding feedback value.
+        const lf = diagnosticsRef.current.diff.loadShedding || 1;
         const downscale =
-          loadSheddingFactor >= 3.5
-            ? 1.8
-            : loadSheddingFactor >= 2.5
-              ? 1.5
-              : loadSheddingFactor >= 1.7
-                ? 1.25
-                : 1;
+          lf >= 3.5 ? 1.8 : lf >= 2.5 ? 1.5 : lf >= 1.7 ? 1.25 : 1;
         const dw = Math.max(1, Math.round(sourceWidth / downscale));
         const dh = Math.max(1, Math.round(sourceHeight / downscale));
 
-        if (seq % 12 === 1) {
-          cachedLeftOccluders = collectOcclusionRects(leftWin, dw, dh);
-          cachedRightOccluders = collectOcclusionRects(rightWin, dw, dh);
-        }
-        const occlusionRects = [
-          ...cachedLeftOccluders,
-          ...cachedRightOccluders,
-        ];
+        const { mask, count } = buildOcclusionMask(dw, dh);
 
-        // Resize temp canvases if needed
-        if (tmpLeft.width !== dw || tmpLeft.height !== dh) {
-          tmpLeft.width = dw;
-          tmpLeft.height = dh;
-          tmpRight.width = dw;
-          tmpRight.height = dh;
-          prevLeftLuma = new Float32Array(dw * dh);
-          prevRightLuma = new Float32Array(dw * dh);
-          prevPrevLeftLuma = new Float32Array(dw * dh);
-          prevPrevRightLuma = new Float32Array(dw * dh);
-          hasPrevFrame = false;
-          hasPrevPrevFrame = false;
-        }
-
-        ctxLeft.drawImage(leftCanvas, 0, 0, dw, dh);
-        const leftData = ctxLeft.getImageData(0, 0, dw, dh);
-        ctxRight.drawImage(rightCanvas, 0, 0, dw, dh);
-        const rightData = ctxRight.getImageData(0, 0, dw, dh);
-
-        // Quick blank check (sample ~1000 pixels across the buffer)
-        let leftSum = 0,
-          rightSum = 0;
-        const sampleStep = Math.max(1, Math.floor(leftData.data.length / 1000));
-        for (let i = 0; i < leftData.data.length; i += sampleStep) {
-          leftSum += leftData.data[i];
-          rightSum += rightData.data[i];
-        }
-
-        // If both canvases are blank, skip expensive diff (game still loading)
-        if (leftSum === 0 && rightSum === 0) {
-          diagnosticsRef.current.diff.blankState = "both-blank";
-          diagnosticsRef.current.diff.frameSeq = seq;
-          diagnosticsRef.current.diff.updatedAt = Date.now();
-          setMismatchPercent(-1);
-          // Clear the overlay canvas
-          canvas.width = dw;
-          canvas.height = dh;
+        const tCaptureStart = performance.now();
+        const [leftBitmap, rightBitmap] = await Promise.all([
+          createImageBitmap(leftCanvas),
+          createImageBitmap(rightCanvas),
+        ]);
+        const captureMs = performance.now() - tCaptureStart;
+        if (cancelled) {
+          leftBitmap.close?.();
+          rightBitmap.close?.();
           return;
         }
 
-        // If only one is blank, log but still compute
-        if (leftSum === 0 || rightSum === 0) {
-          diagnosticsRef.current.diff.blankState =
-            leftSum === 0 ? "left-blank" : "right-blank";
-        } else {
-          diagnosticsRef.current.diff.blankState = "ok";
-        }
+        workerBusy = true;
+        const frameId = ++nextFrameId;
+        const sinceMirror =
+          performance.now() - lastMirroredEventAtRef.current;
 
-        const tCapture = performance.now();
-
-        canvas.width = dw;
-        canvas.height = dh;
-        const ctx = canvas.getContext("2d");
-
-        // Compute diff
-        const output = ctx.createImageData(dw, dh);
-        let mismatchCount = 0;
-        const totalPixels = dw * dh;
-        const sinceMirror = t0 - lastMirroredEventAtRef.current;
-        const isActiveWindow =
-          sinceMirror >= 0 && sinceMirror < DIFF_ACTIVE_WINDOW_MS;
-        const sampleTarget = isActiveWindow
-          ? DIFF_TARGET_SAMPLES_ACTIVE
-          : DIFF_TARGET_SAMPLES_IDLE;
-        const effectiveSampleTarget = Math.max(
-          20000,
-          Math.floor(sampleTarget / loadSheddingFactor),
+        const transferable = [leftBitmap, rightBitmap];
+        // Mask buffer is reused across frames (cache). Don't transfer it;
+        // copy cheaply by re-sending a shared reference isn't possible via
+        // structured clone without detach — so we pass it by value.
+        // To avoid cloning the mask repeatedly when unchanged, send a
+        // lightweight view by slicing (same memory cost but keeps API
+        // simple).
+        worker.postMessage(
+          {
+            type: "diff",
+            id: frameId,
+            leftBitmap,
+            rightBitmap,
+            sourceWidth,
+            sourceHeight,
+            threshold,
+            excludeDynamicAnimations,
+            sinceMirror,
+            occlusionMask: mask,
+            occlusionCount: count,
+            captureMs,
+          },
+          transferable,
         );
-        const maxStep = loadSheddingFactor >= 3 ? 8 : 6;
-        const step = Math.min(
-          maxStep,
-          Math.max(
-            1,
-            Math.ceil(Math.sqrt(totalPixels / effectiveSampleTarget)),
-          ),
-        );
-        let sampledPixels = 0;
-        let comparedPixels = 0;
-        let dynamicSkipped = 0;
-
-        for (let y = 0; y < dh; y += step) {
-          for (let x = 0; x < dw; x += step) {
-            const i = (y * dw + x) * 4;
-            if (isOccluded(x, y, occlusionRects)) {
-              continue;
-            }
-            const pixelIndex = y * dw + x;
-            const leftLuma =
-              (leftData.data[i] * 0.2126 +
-                leftData.data[i + 1] * 0.7152 +
-                leftData.data[i + 2] * 0.0722) /
-              255;
-            const rightLuma =
-              (rightData.data[i] * 0.2126 +
-                rightData.data[i + 1] * 0.7152 +
-                rightData.data[i + 2] * 0.0722) /
-              255;
-
-            const isDynamicMotion =
-              hasPrevFrame &&
-              (Math.abs(leftLuma - prevLeftLuma[pixelIndex]) >
-                DIFF_MOTION_DELTA_THRESHOLD ||
-                Math.abs(rightLuma - prevRightLuma[pixelIndex]) >
-                  DIFF_MOTION_DELTA_THRESHOLD);
-
-            const baseDelta = Math.abs(leftLuma - rightLuma);
-            const oneFrameRightDelta =
-              hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
-                ? Math.abs(leftLuma - prevRightLuma[pixelIndex])
-                : Number.POSITIVE_INFINITY;
-            const oneFrameLeftDelta =
-              hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
-                ? Math.abs(prevLeftLuma[pixelIndex] - rightLuma)
-                : Number.POSITIVE_INFINITY;
-            const twoFrameRightDelta =
-              hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
-                ? Math.abs(leftLuma - prevPrevRightLuma[pixelIndex])
-                : Number.POSITIVE_INFINITY;
-            const twoFrameLeftDelta =
-              hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
-                ? Math.abs(prevPrevLeftLuma[pixelIndex] - rightLuma)
-                : Number.POSITIVE_INFINITY;
-            const delta = Math.min(
-              baseDelta,
-              oneFrameRightDelta,
-              oneFrameLeftDelta,
-              twoFrameRightDelta,
-              twoFrameLeftDelta,
-            );
-
-            if (hasPrevFrame) {
-              prevPrevLeftLuma[pixelIndex] = prevLeftLuma[pixelIndex];
-              prevPrevRightLuma[pixelIndex] = prevRightLuma[pixelIndex];
-            }
-            prevLeftLuma[pixelIndex] = leftLuma;
-            prevRightLuma[pixelIndex] = rightLuma;
-
-            if (excludeDynamicAnimations && isDynamicMotion) {
-              dynamicSkipped++;
-              continue;
-            }
-
-            comparedPixels++;
-            sampledPixels++;
-
-            const isMismatch = delta > threshold;
-            if (isMismatch) mismatchCount++;
-
-            const alpha = isMismatch ? 220 : 0;
-
-            // Fill block
-            for (let dy = 0; dy < step; dy++) {
-              for (let dx = 0; dx < step; dx++) {
-                const px = x + dx;
-                const py = y + dy;
-                if (px >= dw || py >= dh) continue;
-                const oi = (py * dw + px) * 4;
-                output.data[oi] = alpha ? 255 : 0;
-                output.data[oi + 1] = 0;
-                output.data[oi + 2] = 0;
-                output.data[oi + 3] = alpha;
-              }
-            }
-          }
-        }
-
-        framesProcessed += 1;
-        hasPrevFrame = framesProcessed >= 1;
-        hasPrevPrevFrame = framesProcessed >= 2;
-
-        ctx.putImageData(output, 0, 0);
-        const rawPct =
-          comparedPixels > 0
-            ? Number(((mismatchCount / comparedPixels) * 100).toFixed(1))
-            : 0;
-
-        mismatchHistory.push(rawPct);
-        if (mismatchHistory.length > MISMATCH_MEDIAN_WINDOW) {
-          mismatchHistory.shift();
-        }
-        const medianPct = Number(medianOf(mismatchHistory).toFixed(1));
-
-        if (stableMismatchPct < 0) {
-          stableMismatchPct = medianPct;
-        } else {
-          const upwardDelta = medianPct - stableMismatchPct;
-          if (upwardDelta > MISMATCH_SPIKE_DELTA_PCT) {
-            if (
-              pendingSpikeTarget < 0 ||
-              Math.abs(pendingSpikeTarget - medianPct) > 1.5
-            ) {
-              pendingSpikeTarget = medianPct;
-              pendingSpikeCount = 1;
-            } else {
-              pendingSpikeCount += 1;
-            }
-          } else {
-            pendingSpikeTarget = -1;
-            pendingSpikeCount = 0;
-          }
-
-          if (pendingSpikeCount >= MISMATCH_SPIKE_CONFIRM_FRAMES) {
-            stableMismatchPct = medianPct;
-            pendingSpikeTarget = -1;
-            pendingSpikeCount = 0;
-          } else {
-            stableMismatchPct = Number(
-              (stableMismatchPct * 0.7 + medianPct * 0.3).toFixed(1),
-            );
-          }
-        }
-
-        const pct = stableMismatchPct;
-        const tEnd = performance.now();
-        const computeMs = tEnd - t0;
-
-        if (computeMs > targetIntervalMs * 0.75) {
-          loadSheddingFactor = Math.min(4, loadSheddingFactor + 0.35);
-        } else if (computeMs < targetIntervalMs * 0.35) {
-          loadSheddingFactor = Math.max(1, loadSheddingFactor - 0.2);
-        }
-
-        if (computeMs > targetIntervalMs * 0.85) {
-          targetIntervalMs = Math.min(
-            DIFF_MAX_INTERVAL_MS,
-            targetIntervalMs + 8,
-          );
-        } else if (computeMs < targetIntervalMs * 0.45) {
-          targetIntervalMs = Math.max(
-            DIFF_TARGET_INTERVAL_MS,
-            targetIntervalMs - 5,
-          );
-        }
-
-        diagnosticsRef.current.diff = {
-          runId,
-          frameSeq: seq,
-          dims: `${dw}x${dh}`,
-          mismatchPct: pct,
-          rawMismatchPct: rawPct,
-          threshold,
-          sampledPixels,
-          comparedPixels,
-          mismatchPixels: mismatchCount,
-          dynamicSkipped,
-          occluders: occlusionRects.length,
-          step,
-          loadShedding: Number(loadSheddingFactor.toFixed(2)),
-          intervalMs: targetIntervalMs,
-          downscale: Number(downscale.toFixed(2)),
-          computeMs: Number(computeMs.toFixed(2)),
-          captureMs: Number((tCapture - t0).toFixed(2)),
-          totalMs: Number((tEnd - t0).toFixed(2)),
-          blankState: diagnosticsRef.current.diff.blankState || "ok",
-          hasPrevFrame,
-          hasPrevPrevFrame,
-          excludeDynamicAnimations,
-          isActiveWindow,
-          leftPreserveDrawingBuffer: leftPdb,
-          rightPreserveDrawingBuffer: rightPdb,
-          updatedAt: Date.now(),
-        };
-        setMismatchPercent(pct);
       } catch (err) {
+        workerBusy = false;
         diagnosticsRef.current.latestError =
           err instanceof Error ? err.message : String(err);
         diagnosticsRef.current.diff.blankState = "error";
@@ -713,19 +628,32 @@ function LiveWebsiteCompare() {
     };
 
     let lastRun = 0;
+    let rafId = 0;
     const loop = (now) => {
       if (cancelled) return;
-      if (now - lastRun >= targetIntervalMs) {
+      if (!workerBusy && now - lastRun >= targetIntervalMs) {
         lastRun = now;
-        computeDiff();
+        submitFrame();
       }
       rafId = requestAnimationFrame(loop);
     };
-    let rafId = requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      worker.postMessage({ type: "reset" });
+      worker.terminate();
+      for (const fn of teardownObservers) {
+        try {
+          fn();
+        } catch {
+          // ignore
+        }
+      }
+      mutationObservers.length = 0;
+      teardownObservers.length = 0;
+      cachedOcclusionMask = null;
     };
   }, [mismatchEnabled, iframesLoaded, threshold, excludeDynamicAnimations]);
 
@@ -740,7 +668,6 @@ function LiveWebsiteCompare() {
     setIframeLoadGen(0);
 
     try {
-      // Tear down previous session
       if (sessionRef.current) {
         await fetch(`/api/live/session/${sessionRef.current}`, {
           method: "DELETE",
@@ -792,7 +719,7 @@ function LiveWebsiteCompare() {
         },
         latestError: "",
       };
-      setIframeLoadGen(0); // reset so we wait for both new iframes to load
+      setIframeLoadGen(0);
       setLeftProxyUrl(`${leftProxyBase}${leftPath}`);
       setRightProxyUrl(`${rightProxyBase}${rightPath}`);
       setLeftName(leftUrl || "Website A");
@@ -814,7 +741,6 @@ function LiveWebsiteCompare() {
   }, []);
 
   const handleIframeLoad = useCallback((side) => {
-    // Increment generation so mirroring effect re-attaches to fresh docs
     setIframeLoadGen((g) => g + 1);
     const now = Date.now();
     if (side === "left") {
@@ -900,14 +826,12 @@ function LiveWebsiteCompare() {
           )}
         </div>
 
-        {/* Top stage: URL1 base (interactive), URL2 clipped overlay for visual diff */}
         <div
           className={`website-stage ${sessionId ? "active" : ""}`}
           ref={topContainerRef}
         >
           {sessionId ? (
             <>
-              {/* URL1 (base) iframe */}
               <iframe
                 ref={leftIframeRef}
                 src={leftProxyUrl}
@@ -917,7 +841,6 @@ function LiveWebsiteCompare() {
                 onLoad={() => handleIframeLoad("left")}
               />
 
-              {/* URL2 overlay stream (non-interactive) */}
               <div
                 className="website-compare-overlay"
                 style={
@@ -939,7 +862,6 @@ function LiveWebsiteCompare() {
                 />
               </div>
 
-              {/* Diff canvas overlay */}
               {mismatchEnabled && (
                 <canvas
                   ref={diffCanvasRef}
