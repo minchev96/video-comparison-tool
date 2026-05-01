@@ -199,100 +199,71 @@ const runDiff = ({
 
   const hasMask = !!occlusionMask && occlusionMask.byteLength === dw * dh;
 
-  for (let y = 0; y < dh; y += step) {
-    for (let x = 0; x < dw; x += step) {
-      const sampleX = Math.min(dw - 1, x + Math.floor(step / 2));
-      const sampleY = Math.min(dh - 1, y + Math.floor(step / 2));
-      const pixelIndex = sampleY * dw + sampleX;
-      if (hasMask && occlusionMask[pixelIndex]) continue;
+  for (let pixelIndex = 0; pixelIndex < dw * dh; pixelIndex += 1) {
+    if (hasMask && occlusionMask[pixelIndex]) continue;
 
-      const i = pixelIndex * 4;
-      const leftLuma =
-        (L[i] * 0.2126 + L[i + 1] * 0.7152 + L[i + 2] * 0.0722) / 255;
-      const rightLuma =
-        (R[i] * 0.2126 + R[i + 1] * 0.7152 + R[i + 2] * 0.0722) / 255;
+    const i = pixelIndex * 4;
+    const leftLuma =
+      (L[i] * 0.2126 + L[i + 1] * 0.7152 + L[i + 2] * 0.0722) / 255;
+    const rightLuma =
+      (R[i] * 0.2126 + R[i + 1] * 0.7152 + R[i + 2] * 0.0722) / 255;
 
-      const isDynamicMotion =
-        hasPrevFrame &&
-        (Math.abs(leftLuma - prevLeftLuma[pixelIndex]) >
-          DIFF_MOTION_DELTA_THRESHOLD ||
-          Math.abs(rightLuma - prevRightLuma[pixelIndex]) >
-            DIFF_MOTION_DELTA_THRESHOLD);
+    const isDynamicMotion =
+      hasPrevFrame &&
+      (Math.abs(leftLuma - prevLeftLuma[pixelIndex]) >
+        DIFF_MOTION_DELTA_THRESHOLD ||
+        Math.abs(rightLuma - prevRightLuma[pixelIndex]) >
+          DIFF_MOTION_DELTA_THRESHOLD);
 
-      const baseDelta = Math.abs(leftLuma - rightLuma);
-      const oneFrameRightDelta =
-        hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
-          ? Math.abs(leftLuma - prevRightLuma[pixelIndex])
-          : Number.POSITIVE_INFINITY;
-      const oneFrameLeftDelta =
-        hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
-          ? Math.abs(prevLeftLuma[pixelIndex] - rightLuma)
-          : Number.POSITIVE_INFINITY;
-      const twoFrameRightDelta =
-        hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
-          ? Math.abs(leftLuma - prevPrevRightLuma[pixelIndex])
-          : Number.POSITIVE_INFINITY;
-      const twoFrameLeftDelta =
-        hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
-          ? Math.abs(prevPrevLeftLuma[pixelIndex] - rightLuma)
-          : Number.POSITIVE_INFINITY;
+    const baseDelta = Math.abs(leftLuma - rightLuma);
+    const oneFrameRightDelta =
+      hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
+        ? Math.abs(leftLuma - prevRightLuma[pixelIndex])
+        : Number.POSITIVE_INFINITY;
+    const oneFrameLeftDelta =
+      hasPrevFrame && DIFF_ONE_FRAME_SYNC_COMPENSATION
+        ? Math.abs(prevLeftLuma[pixelIndex] - rightLuma)
+        : Number.POSITIVE_INFINITY;
+    const twoFrameRightDelta =
+      hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
+        ? Math.abs(leftLuma - prevPrevRightLuma[pixelIndex])
+        : Number.POSITIVE_INFINITY;
+    const twoFrameLeftDelta =
+      hasPrevPrevFrame && DIFF_TWO_FRAME_SYNC_COMPENSATION
+        ? Math.abs(prevPrevLeftLuma[pixelIndex] - rightLuma)
+        : Number.POSITIVE_INFINITY;
 
-      const delta = Math.min(
-        baseDelta,
-        oneFrameRightDelta,
-        oneFrameLeftDelta,
-        twoFrameRightDelta,
-        twoFrameLeftDelta,
-      );
+    const delta = Math.min(
+      baseDelta,
+      oneFrameRightDelta,
+      oneFrameLeftDelta,
+      twoFrameRightDelta,
+      twoFrameLeftDelta,
+    );
 
-      if (hasPrevFrame) {
-        prevPrevLeftLuma[pixelIndex] = prevLeftLuma[pixelIndex];
-        prevPrevRightLuma[pixelIndex] = prevRightLuma[pixelIndex];
-      }
-      prevLeftLuma[pixelIndex] = leftLuma;
-      prevRightLuma[pixelIndex] = rightLuma;
+    if (hasPrevFrame) {
+      prevPrevLeftLuma[pixelIndex] = prevLeftLuma[pixelIndex];
+      prevPrevRightLuma[pixelIndex] = prevRightLuma[pixelIndex];
+    }
+    prevLeftLuma[pixelIndex] = leftLuma;
+    prevRightLuma[pixelIndex] = rightLuma;
 
-      if (excludeDynamicAnimations && isDynamicMotion) {
-        dynamicSkipped++;
-        continue;
-      }
+    if (excludeDynamicAnimations && isDynamicMotion) {
+      dynamicSkipped++;
+      continue;
+    }
 
-      sampledPixels++;
+    comparedPixels++;
+    sampledPixels++;
 
-      const isMismatch = delta > threshold;
-
-      if (isMismatch) {
-        // For detailed pixel-level display, scan all pixels in this block
-        const maxDx = Math.min(step, dw - x);
-        const maxDy = Math.min(step, dh - y);
-        for (let dy = 0; dy < maxDy; dy += 1) {
-          for (let dx = 0; dx < maxDx; dx += 1) {
-            const py = y + dy;
-            const px = x + dx;
-            const pIdx = py * dw + px;
-            if (hasMask && occlusionMask[pIdx]) continue;
-
-            const pi = pIdx * 4;
-            const pLuma =
-              (L[pi] * 0.2126 + L[pi + 1] * 0.7152 + L[pi + 2] * 0.0722) / 255;
-            const qLuma =
-              (R[pi] * 0.2126 + R[pi + 1] * 0.7152 + R[pi + 2] * 0.0722) / 255;
-
-            const pDelta = Math.abs(pLuma - qLuma);
-            comparedPixels++;
-            if (pDelta > threshold) {
-              O[pi] = 255;
-              O[pi + 1] = 0;
-              O[pi + 2] = 0;
-              O[pi + 3] = 255;
-              mismatchCount++;
-            }
-          }
-        }
-      } else {
-        // No sample mismatch, just count the sample
-        comparedPixels++;
-      }
+    const isMismatch = delta > threshold;
+    if (isMismatch) {
+      mismatchCount++;
+      const intensity = Math.max(80, Math.min(255, Math.round(delta * 255)));
+      O[i] = 255;
+      O[i + 1] = 0;
+      O[i + 2] = 0;
+      O[i + 3] = intensity;
     }
   }
 
