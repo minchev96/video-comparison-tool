@@ -29,12 +29,7 @@ Install dependencies first:
 npm install
 ```
 
-Install Chromium for Playwright if it is not already available:
-
-```bash
-npx playwright install chromium
 ```
-
 Start the backend and frontend in separate terminals:
 
 ```bash
