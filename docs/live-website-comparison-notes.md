@@ -4,6 +4,8 @@ This document explains the main live-comparison behaviors used by the app.
 
 ## 1. Action mirroring between the two streams
 
+Implemented in [live-server.js], [injected-scripts.js], and [LiveWebsiteCompare.jsx]
+
 The backend injects a mirror script into both proxied pages. Each iframe runs the same runtime, but only the left side acts as the source of user events.
 
 How it works:
@@ -19,6 +21,8 @@ The right stream does not re-broadcast mirrored key and input events back to the
 
 ## 2. How the second stream stays synced with the first
 
+Implemented in [live-server.js], [injected-scripts.js] and [LiveWebsiteCompare.jsx]
+
 The comparison setup keeps the right stream aligned with the left stream by replaying the same user actions in the same order and by replaying selected network activity that affects the page state.
 
 The main pieces are:
@@ -32,6 +36,8 @@ The main pieces are:
 This keeps the second stream moving through the same UI states as the first stream, which is what keeps the visual comparison meaningful.
 
 ## 3. How dynamic animations are excluded
+
+Implemented in [diffWorker.js] and surfaced through [LiveWebsiteCompare.jsx]
 
 The diff worker can ignore pixels that appear to belong to moving or animated content.
 
@@ -50,3 +56,19 @@ Why the worker can identify animations:
 - The worker also keeps one-frame and two-frame sync-compensated comparisons, so small timing offsets between the two streams do not immediately count as mismatches.
 
 The worker reports how many pixels were skipped via `dynamicSkipped`, which helps confirm how much animation was excluded during a diff run.
+
+## 4. How network intercept and replay work
+
+Implemented in [live-server.js] and [injected-scripts.js], and [LiveWebsiteCompare.jsx].
+
+The live backend and injected runtime capture special request/response pairs so the right stream can reuse the left stream's network results when needed.
+
+How it works:
+
+- The proxy identifies bet-related requests by path or request body and stores the left-side response payload in session state.
+- The injected runtime patches both `fetch` and `XMLHttpRequest` so matching right-side requests can replay a captured response instead of issuing a fresh network call.
+- The left iframe posts captured payloads back to the parent window with a `__betCapture` marker.
+- The parent relays that capture to the right iframe so both sides stay aligned on network-dependent UI state.
+- Replay is time-bounded so stale responses do not linger in the cache.
+
+This behavior is what keeps network-driven screens, especially bet flows, comparable when the two sites would otherwise diverge on timing or side effects.

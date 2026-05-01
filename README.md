@@ -1,45 +1,52 @@
-# React + Vite
+# Video Comparison Tool
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React + Vite application for comparing local video/image sources and live websites side by side.
 
-Currently, two official plugins are available:
+## What It Includes
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- File-based comparison workspace on `/`.
+- Live website comparison workspace on `/live`.
+- Reverse-proxy backend for loading two remote websites in same-origin iframes.
+- Mirrored interaction replay, network response capture/replay, and worker-driven pixel diffing.
 
-## React Compiler
+## Scripts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `npm run dev` starts the Vite frontend.
+- `npm run dev:live` starts the live comparison backend on port `8787`.
+- `npm run build` creates a production build.
+- `npm run lint` runs ESLint across the workspace.
+- `npm run preview` serves the production build locally.
 
-## Expanding the ESLint configuration
+## Live Website Comparison
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The live mode loads two target websites through the local reverse proxy and keeps them in sync by mirroring user actions, replaying special network traffic, and diffing the rendered frames in the browser.
 
-## Live Website Comparison Mode
+### Setup
 
-The `Live` page now supports website-to-website comparison by running two remote browser pages on a local backend and mirroring interactions to both.
-
-### Start the backend service
-
-```bash
-npm run dev:live
-```
-
-### Start the frontend
+Install dependencies first:
 
 ```bash
-npm run dev
+npm install
 ```
 
-### One-time Playwright setup
-
-Install Chromium for Playwright if it is not already installed:
+Install Chromium for Playwright if it is not already available:
 
 ```bash
 npx playwright install chromium
 ```
 
+Start the backend and frontend in separate terminals:
+
+```bash
+npm run dev:live
+```
+
+```bash
+npm run dev
+```
+
 ### Notes
 
 - The top rendered website view is interactive; clicks, wheel, and keyboard actions are mirrored to both websites.
-- The backend endpoint is proxied through Vite (`/api -> http://localhost:8787`).
+- The proxy endpoint is exposed through Vite as `/api -> http://localhost:8787`.
+- The compare UI includes a threshold control, an animation-exclusion toggle, and live mismatch diagnostics.
