@@ -22,7 +22,7 @@ const mirrorRuntime = (side) => {
   const betWaiters = new Map();
   const BET_CACHE_MS = 5000;
   const _BET_WAIT_MS = 900;
-  const RIGHT_BET_WAIT_MS = 2500;
+  const RIGHT_BET_WAIT_MS = 180;
   const dbg = () => {};
 
   function nowTs() {

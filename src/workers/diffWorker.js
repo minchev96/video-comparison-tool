@@ -9,8 +9,8 @@
 
 const DIFF_TARGET_INTERVAL_MS = 66;
 const DIFF_MAX_INTERVAL_MS = 110;
-const DIFF_TARGET_SAMPLES_IDLE = 120000;
-const DIFF_TARGET_SAMPLES_ACTIVE = 70000;
+const DIFF_TARGET_SAMPLES_IDLE = 150000;
+const DIFF_TARGET_SAMPLES_ACTIVE = 110000;
 const DIFF_ACTIVE_WINDOW_MS = 400;
 const DIFF_MOTION_DELTA_THRESHOLD = 0.08;
 const DIFF_ONE_FRAME_SYNC_COMPENSATION = true;
@@ -96,13 +96,10 @@ const computeStep = (totalPixels, sinceMirror) => {
     20000,
     Math.floor(sampleTarget / loadSheddingFactor),
   );
-  const maxStep = loadSheddingFactor >= 3 ? 8 : 6;
+  const maxStep = loadSheddingFactor >= 3 ? 5 : 4;
   const step = Math.min(
     maxStep,
-    Math.max(
-      1,
-      Math.ceil(Math.sqrt(totalPixels / effectiveSampleTarget)),
-    ),
+    Math.max(1, Math.ceil(Math.sqrt(totalPixels / effectiveSampleTarget))),
   );
   return { step, isActiveWindow };
 };
@@ -204,7 +201,9 @@ const runDiff = ({
 
   for (let y = 0; y < dh; y += step) {
     for (let x = 0; x < dw; x += step) {
-      const pixelIndex = y * dw + x;
+      const sampleX = Math.min(dw - 1, x + Math.floor(step / 2));
+      const sampleY = Math.min(dh - 1, y + Math.floor(step / 2));
+      const pixelIndex = sampleY * dw + sampleX;
       if (hasMask && occlusionMask[pixelIndex]) continue;
 
       const i = pixelIndex * 4;
@@ -258,25 +257,41 @@ const runDiff = ({
         continue;
       }
 
-      comparedPixels++;
       sampledPixels++;
 
       const isMismatch = delta > threshold;
-      if (isMismatch) mismatchCount++;
 
       if (isMismatch) {
-        const maxDy = Math.min(step, dh - y);
+        // For detailed pixel-level display, scan all pixels in this block
         const maxDx = Math.min(step, dw - x);
-        for (let dy = 0; dy < maxDy; dy++) {
-          const rowStart = ((y + dy) * dw + x) * 4;
-          for (let dx = 0; dx < maxDx; dx++) {
-            const oi = rowStart + dx * 4;
-            O[oi] = 255;
-            O[oi + 1] = 0;
-            O[oi + 2] = 0;
-            O[oi + 3] = 220;
+        const maxDy = Math.min(step, dh - y);
+        for (let dy = 0; dy < maxDy; dy += 1) {
+          for (let dx = 0; dx < maxDx; dx += 1) {
+            const py = y + dy;
+            const px = x + dx;
+            const pIdx = py * dw + px;
+            if (hasMask && occlusionMask[pIdx]) continue;
+
+            const pi = pIdx * 4;
+            const pLuma =
+              (L[pi] * 0.2126 + L[pi + 1] * 0.7152 + L[pi + 2] * 0.0722) / 255;
+            const qLuma =
+              (R[pi] * 0.2126 + R[pi + 1] * 0.7152 + R[pi + 2] * 0.0722) / 255;
+
+            const pDelta = Math.abs(pLuma - qLuma);
+            comparedPixels++;
+            if (pDelta > threshold) {
+              O[pi] = 255;
+              O[pi + 1] = 0;
+              O[pi + 2] = 0;
+              O[pi + 3] = 255;
+              mismatchCount++;
+            }
           }
         }
+      } else {
+        // No sample mismatch, just count the sample
+        comparedPixels++;
       }
     }
   }

@@ -9,6 +9,42 @@ import "../styles/LiveWebsiteCompare.css";
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const DIFF_TARGET_INTERVAL_MS = 66;
 const OCCLUSION_REFRESH_MIN_MS = 250;
+const VIEWPORT_PRESETS = [
+  {
+    value: "default",
+    label: "Default (1600 x 900)",
+    width: 1600,
+    height: 900,
+  },
+  {
+    value: "iphone-se",
+    label: "iPhone SE (375 x 667)",
+    width: 375,
+    height: 667,
+  },
+  {
+    value: "iphone-15-pro-max",
+    label: "iPhone 15 Pro Max (430 x 932)",
+    width: 430,
+    height: 932,
+  },
+  {
+    value: "ipad-10",
+    label: "iPad 10 (820 x 1180)",
+    width: 820,
+    height: 1180,
+  },
+  {
+    value: "samsung-galaxy-s24",
+    label: "Samsung Galaxy S24 (412 x 915)",
+    width: 412,
+    height: 915,
+  },
+];
+
+const getViewportPreset = (value) =>
+  VIEWPORT_PRESETS.find((preset) => preset.value === value) ||
+  VIEWPORT_PRESETS[0];
 
 function LiveWebsiteCompare() {
   const navigate = useNavigate();
@@ -86,7 +122,65 @@ function LiveWebsiteCompare() {
   const [sliderPos, setSliderPos] = useState(0.5);
   const [isFormCollapsed, setIsFormCollapsed] = useState(false);
   const [iframeLoadGen, setIframeLoadGen] = useState(0);
+  const [viewportPreset, setViewportPreset] = useState("default");
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const iframesLoaded = iframeLoadGen >= 2;
+  const selectedViewport = getViewportPreset(viewportPreset);
+
+  useEffect(() => {
+    const updateStageSize = () => {
+      const stage = topContainerRef.current;
+      const container = stage?.parentElement;
+      if (!stage || !container) return;
+
+      const containerWidth = Math.max(320, container.clientWidth || 0);
+      const stageTop = stage.getBoundingClientRect().top || 0;
+      const availableHeight = Math.max(
+        220,
+        (window.innerHeight || 0) - stageTop - 24,
+      );
+
+      const aspectRatio = selectedViewport.height / selectedViewport.width;
+      const width =
+        selectedViewport.value === "default"
+          ? Math.max(320, containerWidth)
+          : Math.max(
+              320,
+              Math.min(
+                selectedViewport.width,
+                containerWidth,
+                Math.floor(availableHeight / aspectRatio),
+              ),
+            );
+      const height = Math.max(220, Math.round(width * aspectRatio));
+
+      setStageSize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height },
+      );
+    };
+
+    updateStageSize();
+
+    window.addEventListener("resize", updateStageSize);
+    return () => window.removeEventListener("resize", updateStageSize);
+  }, [selectedViewport.value, selectedViewport.width, selectedViewport.height]);
+
+  const stageStyle =
+    stageSize.width && stageSize.height
+      ? selectedViewport.value === "default"
+        ? {
+            width: "100%",
+            height: `${stageSize.height}px`,
+            marginInline: "auto",
+          }
+        : {
+            width: `${stageSize.width}px`,
+            height: `${stageSize.height}px`,
+            marginInline: "auto",
+          }
+      : { width: "100%", marginInline: "auto" };
 
   const updateRelayDiagnostics = useCallback((relayDelay, relayType) => {
     const diag = diagnosticsRef.current;
@@ -382,17 +476,42 @@ function LiveWebsiteCompare() {
             continue;
           }
 
-          const zIndex = Number.parseInt(style.zIndex || "0", 10);
-          const isFloating =
-            style.position === "fixed" ||
-            style.position === "absolute" ||
-            style.position === "sticky";
-          if (!isFloating && zIndex < 50) {
+          let zIndex = Number.parseInt(style.zIndex, 10);
+          if (!Number.isFinite(zIndex)) zIndex = 0;
+          const isFixedLike =
+            style.position === "fixed" || style.position === "sticky";
+
+          // Only consider non-fixed elements when they have an explicit high z-index
+          if (!isFixedLike && zIndex < 50) {
             continue;
           }
 
           const rect = element.getBoundingClientRect();
           if (rect.width < 16 || rect.height < 16) continue;
+          // Ignore transparent/backgroundless elements (likely structural)
+          const bg = style.backgroundColor || "";
+          const boxShadow = style.boxShadow || "";
+          const hasVisibleBackground =
+            bg !== "transparent" &&
+            !bg.includes("rgba(0, 0, 0, 0)") &&
+            (bg !== "" ||
+              boxShadow !== "" ||
+              Number.parseFloat(style.borderWidth || "0") > 0);
+          if (!hasVisibleBackground && !isFixedLike && zIndex === 0) continue;
+          const centerX = clamp(
+            Math.floor(rect.left + rect.width * 0.5),
+            0,
+            viewW - 1,
+          );
+          const centerY = clamp(
+            Math.floor(rect.top + rect.height * 0.5),
+            0,
+            viewH - 1,
+          );
+          const topNode = doc.elementFromPoint(centerX, centerY);
+          if (topNode && topNode !== element && !element.contains(topNode)) {
+            continue;
+          }
           const areaRatio = (rect.width * rect.height) / (viewW * viewH);
           if (areaRatio < 0.005 || areaRatio > 0.98) continue;
 
@@ -402,7 +521,7 @@ function LiveWebsiteCompare() {
           const y2 = clamp(Math.ceil(rect.bottom * scaleY), 0, targetH);
 
           if (x2 - x1 > 2 && y2 - y1 > 2) {
-            rects.push({ x1, y1, x2, y2 });
+            rects.push({ x1, y1, x2, y2, tag: element.tagName, zIndex });
           }
 
           if (rects.length >= 40) break;
@@ -442,8 +561,19 @@ function LiveWebsiteCompare() {
       const allRects = leftRects.concat(rightRects);
 
       const mask = new Uint8Array(dw * dh);
+      // Dedupe and clip rects before rasterizing
+      const seen = new Set();
       for (let r = 0; r < allRects.length; r++) {
-        const { x1, y1, x2, y2 } = allRects[r];
+        let { x1, y1, x2, y2 } = allRects[r];
+        // clip to bounds
+        x1 = clamp(x1, 0, dw - 1);
+        x2 = clamp(x2, 0, dw);
+        y1 = clamp(y1, 0, dh - 1);
+        y2 = clamp(y2, 0, dh);
+        if (x2 <= x1 || y2 <= y1) continue;
+        const key = `${x1},${y1},${x2},${y2}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         for (let y = y1; y < y2; y++) {
           const rowStart = y * dw;
           for (let x = x1; x < x2; x++) {
@@ -515,10 +645,15 @@ function LiveWebsiteCompare() {
         const stats = data.stats;
         const bitmap = data.bitmap;
         if (bitmap) {
+          // Ensure canvas pixel size matches bitmap and CSS fills the stage
           if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
           if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+          // CSS size should match container to avoid layout clipping
+          canvas.style.width = "100%";
+          canvas.style.height = "100%";
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(bitmap, 0, 0);
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
           bitmap.close?.();
         }
         diagnosticsRef.current.diff = {
@@ -590,8 +725,7 @@ function LiveWebsiteCompare() {
 
         workerBusy = true;
         const frameId = ++nextFrameId;
-        const sinceMirror =
-          performance.now() - lastMirroredEventAtRef.current;
+        const sinceMirror = performance.now() - lastMirroredEventAtRef.current;
 
         const transferable = [leftBitmap, rightBitmap];
         // Mask buffer is reused across frames (cache). Don't transfer it;
@@ -613,6 +747,7 @@ function LiveWebsiteCompare() {
             sinceMirror,
             occlusionMask: mask,
             occlusionCount: count,
+            debug: false,
             captureMs,
           },
           transferable,
@@ -786,6 +921,21 @@ function LiveWebsiteCompare() {
         </div>
 
         <div className="website-mismatch-controls">
+          <label className="website-viewport">
+            <span>Dimensions</span>
+            <select
+              value={viewportPreset}
+              onChange={(e) => setViewportPreset(e.target.value)}
+              disabled={!sessionId}
+            >
+              {VIEWPORT_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="website-toggle">
             <input
               type="checkbox"
@@ -818,17 +968,20 @@ function LiveWebsiteCompare() {
             />
             Exclude dynamic animations
           </label>
+        </div>
 
-          {mismatchEnabled && mismatchPercent >= 0 && (
+        {mismatchEnabled && mismatchPercent >= 0 && (
+          <div className="website-mismatch-stat-row">
             <span className="website-mismatch-stat">
               Mismatch: {mismatchPercent.toFixed(1)}%
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         <div
           className={`website-stage ${sessionId ? "active" : ""}`}
           ref={topContainerRef}
+          style={stageStyle}
         >
           {sessionId ? (
             <>

@@ -27,6 +27,7 @@
   overflow: hidden;
   background: rgba(7, 10, 18, 0.95);
   min-height: 220px;
+  aspect-ratio: 16 / 9;
 }
 
 .website-stage.active {
@@ -36,7 +37,7 @@
 .website-iframe {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   border: none;
 }
 
@@ -99,24 +100,97 @@
 .website-mismatch-controls {
   display: flex;
   gap: 1rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  overflow: hidden;
+}
+
+.website-viewport {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.15rem 0.2rem 0.15rem 0;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.website-viewport span {
+  color: #edf0f8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.website-viewport select {
+  min-width: 15.5rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #121722;
+  color: #f7f8fb;
+  padding: 0.62rem 2.1rem 0.62rem 0.85rem;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: dark;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #cfd3df 50%),
+    linear-gradient(135deg, #cfd3df 50%, transparent 50%);
+  background-position:
+    calc(100% - 1rem) calc(50% - 2px),
+    calc(100% - 0.7rem) calc(50% - 2px);
+  background-size:
+    0.35rem 0.35rem,
+    0.35rem 0.35rem;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.website-viewport select option {
+  background: #121722;
+  color: #f7f8fb;
+}
+
+.website-viewport select:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.website-viewport select:focus-visible {
+  outline: none;
+  border-color: rgba(255, 71, 87, 0.8);
+  box-shadow: 0 0 0 3px rgba(255, 71, 87, 0.16);
 }
 
 .website-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.website-mismatch-stat-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
 }
 
 .website-threshold {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
+  white-space: nowrap;
+  flex: 1 1 280px;
+  min-width: 260px;
 }
 
 .website-threshold input {
-  width: 180px;
+  width: min(260px, 100%);
 }
 
 .website-quality-group {
