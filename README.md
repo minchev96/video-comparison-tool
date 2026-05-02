@@ -29,7 +29,6 @@ Install dependencies first:
 npm install
 ```
 
-```
 Start the backend and frontend in separate terminals:
 
 ```bash
