@@ -51,6 +51,15 @@ const medianOf = (values) => {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
+export const getMismatchPixelTint = (_frameIndex, intensity) => {
+  return {
+    r: 255,
+    g: 0,
+    b: 0,
+    a: intensity,
+  };
+};
+
 const ensureBuffers = (dw, dh) => {
   if (currentDims.dw === dw && currentDims.dh === dh && tmpLeft) return;
   currentDims = { dw, dh };
@@ -260,10 +269,11 @@ const runDiff = ({
     if (isMismatch) {
       mismatchCount++;
       const intensity = Math.max(80, Math.min(255, Math.round(delta * 255)));
-      O[i] = 255;
-      O[i + 1] = 0;
-      O[i + 2] = 0;
-      O[i + 3] = intensity;
+      const tint = getMismatchPixelTint(0, intensity);
+      O[i] = tint.r;
+      O[i + 1] = tint.g;
+      O[i + 2] = tint.b;
+      O[i + 3] = tint.a;
     }
   }
 
@@ -361,42 +371,44 @@ const runDiff = ({
   };
 };
 
-self.onmessage = (event) => {
-  const msg = event.data;
-  if (!msg) return;
+if (typeof self !== "undefined") {
+  self.onmessage = (event) => {
+    const msg = event.data;
+    if (!msg) return;
 
-  if (msg.type === "reset") {
-    resetState();
-    self.postMessage({ type: "reset-ack" });
-    return;
-  }
-
-  if (msg.type !== "diff") return;
-
-  try {
-    const result = runDiff(msg);
-    self.postMessage(
-      {
-        type: "diff-result",
-        id: msg.id,
-        bitmap: result.bitmap,
-        stats: result.stats,
-        intervalMs: targetIntervalMs,
-      },
-      [result.bitmap],
-    );
-  } catch (err) {
-    try {
-      msg.leftBitmap?.close?.();
-      msg.rightBitmap?.close?.();
-    } catch {
-      // ignore
+    if (msg.type === "reset") {
+      resetState();
+      self.postMessage({ type: "reset-ack" });
+      return;
     }
-    self.postMessage({
-      type: "diff-error",
-      id: msg.id,
-      error: err instanceof Error ? err.message : String(err),
-      intervalMs: targetIntervalMs,
-    });
-  }
-};
+
+    if (msg.type !== "diff") return;
+
+    try {
+      const result = runDiff(msg);
+      self.postMessage(
+        {
+          type: "diff-result",
+          id: msg.id,
+          bitmap: result.bitmap,
+          stats: result.stats,
+          intervalMs: targetIntervalMs,
+        },
+        [result.bitmap],
+      );
+    } catch (err) {
+      try {
+        msg.leftBitmap?.close?.();
+        msg.rightBitmap?.close?.();
+      } catch {
+        // ignore
+      }
+      self.postMessage({
+        type: "diff-error",
+        id: msg.id,
+        error: err instanceof Error ? err.message : String(err),
+        intervalMs: targetIntervalMs,
+      });
+    }
+  };
+}

@@ -785,7 +785,19 @@ const mirrorRuntime = (side) => {
 
         if (element) {
           if (data.type === "click") {
-            element.click();
+            const clickPayload = {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              clientX: px,
+              clientY: py,
+              screenX: data.sx,
+              screenY: data.sy,
+              button: data.btn,
+              buttons: data.btns,
+              view: window,
+            };
+            element.dispatchEvent(new MouseEvent("click", clickPayload));
           } else {
             const isPointer = data.type.indexOf("pointer") === 0;
             const EventCtor = isPointer ? PointerEvent : MouseEvent;

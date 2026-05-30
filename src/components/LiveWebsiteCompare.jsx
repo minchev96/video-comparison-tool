@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../App.css";
 import LiveSourceForm from "./LiveSourceForm.jsx";
+import { shouldShowMismatchStat } from "./liveCompareUtils.js";
 import TopBar from "./TopBar.jsx";
 import WarningBanner from "./WarningBanner.jsx";
 import "../styles/LiveWebsiteCompare.css";
@@ -119,6 +120,7 @@ function LiveWebsiteCompare() {
   const [excludeDynamicAnimations, setExcludeDynamicAnimations] =
     useState(false);
   const [mismatchPercent, setMismatchPercent] = useState(-1);
+  const [hasSeenMismatch, setHasSeenMismatch] = useState(false);
   const [sliderPos, setSliderPos] = useState(0.5);
   const [isFormCollapsed, setIsFormCollapsed] = useState(false);
   const [iframeLoadGen, setIframeLoadGen] = useState(0);
@@ -126,6 +128,8 @@ function LiveWebsiteCompare() {
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const iframesLoaded = iframeLoadGen >= 2;
   const selectedViewport = getViewportPreset(viewportPreset);
+  const mismatchAboveThreshold =
+    mismatchEnabled && shouldShowMismatchStat(mismatchPercent, threshold);
 
   useEffect(() => {
     const updateStageSize = () => {
@@ -206,6 +210,21 @@ function LiveWebsiteCompare() {
       setSliderPos(0.5);
     }
   }, [mismatchEnabled]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setHasSeenMismatch(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (
+      mismatchEnabled &&
+      shouldShowMismatchStat(mismatchPercent, threshold)
+    ) {
+      setHasSeenMismatch(true);
+    }
+  }, [mismatchEnabled, mismatchPercent, threshold]);
 
   // Cleanup session on unmount
   useEffect(() => {
@@ -801,6 +820,9 @@ function LiveWebsiteCompare() {
     setRightInputError("");
     setStatusMessage("Setting up proxy session...");
     setIframeLoadGen(0);
+    setMismatchEnabled(false);
+    setHasSeenMismatch(false);
+    setMismatchPercent(-1);
 
     try {
       if (sessionRef.current) {
@@ -859,6 +881,7 @@ function LiveWebsiteCompare() {
       setRightProxyUrl(`${rightProxyBase}${rightPath}`);
       setLeftName(leftUrl || "Website A");
       setRightName(rightUrl || "Website B");
+      setHasSeenMismatch(false);
       setStatusMessage(
         "Live comparison active — websites render natively in your browser.",
       );
@@ -917,7 +940,29 @@ function LiveWebsiteCompare() {
       <section className="website-stack panel-block">
         <div className="website-stack-header">
           <h2>Live Comparison</h2>
-          <span>{statusMessage}</span>
+          {sessionId && (() => {
+            const headerText = mismatchAboveThreshold
+              ? `Mismatch: ${mismatchPercent.toFixed(1)}%`
+              : !hasSeenMismatch
+                ? statusMessage
+                : "";
+
+            if (!headerText) return null;
+
+            return (
+              <div className="website-stack-header-status" aria-live="polite">
+                <span
+                  className={
+                    mismatchAboveThreshold
+                      ? "website-stack-header-status-mismatch"
+                      : "website-stack-header-status-main"
+                  }
+                >
+                  {headerText}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="website-mismatch-controls">
@@ -970,16 +1015,10 @@ function LiveWebsiteCompare() {
           </label>
         </div>
 
-        {mismatchEnabled && mismatchPercent >= 0 && (
-          <div className="website-mismatch-stat-row">
-            <span className="website-mismatch-stat">
-              Mismatch: {mismatchPercent.toFixed(1)}%
-            </span>
-          </div>
-        )}
-
         <div
-          className={`website-stage ${sessionId ? "active" : ""}`}
+          className={`website-stage ${sessionId ? "active" : ""} ${
+            mismatchAboveThreshold ? "mismatch-alert" : ""
+          }`}
           ref={topContainerRef}
           style={stageStyle}
         >
