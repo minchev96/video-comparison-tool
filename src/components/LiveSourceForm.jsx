@@ -19,6 +19,7 @@ function LiveSourceForm({
   const [leftUrl, setLeftUrl] = useState("");
   const [rightUrl, setRightUrl] = useState("");
   const [formError, setFormError] = useState("");
+  const canRefresh = Boolean(leftName && rightName) && !disabled;
 
   const handleApply = () => {
     const leftTrimmed = leftUrl.trim();
@@ -46,16 +47,34 @@ function LiveSourceForm({
     <section className="live-form panel-block" aria-label="Live URL Inputs">
       <div className="live-form-header">
         <h2>{title}</h2>
-        {onToggleCollapse && (
-          <button
-            type="button"
-            className={`live-collapse-button${collapsed ? " is-collapsed" : ""}`}
-            onClick={onToggleCollapse}
-            aria-label={collapsed ? "Expand URL form" : "Collapse URL form"}
-          >
-            <span className="live-collapse-icon" aria-hidden="true" />
-          </button>
-        )}
+        <div className="live-form-actions">
+          {leftName && rightName && (
+            <button
+              type="button"
+              className="live-refresh-button"
+              onClick={handleApply}
+              disabled={!canRefresh}
+              aria-label="Refresh URLs"
+              title="Refresh URLs"
+            >
+              <span className="live-refresh-icon" aria-hidden="true">
+                ↻
+              </span>
+            </button>
+          )}
+
+          {onToggleCollapse && (
+            <button
+              type="button"
+              className={`live-collapse-button${collapsed ? " is-collapsed" : ""}`}
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? "Expand URL form" : "Collapse URL form"}
+              title={collapsed ? "Expand URL form" : "Collapse URL form"}
+            >
+              <span className="live-collapse-icon" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
 
       {collapsed ? (
@@ -103,7 +122,7 @@ function LiveSourceForm({
           </div>
 
           {(formError || leftInputError || rightInputError) && (
-            <div className="live-errors" role="status">
+            <div className="live-errors" aria-live="polite" aria-atomic="true">
               {formError && <p>{formError}</p>}
               {leftInputError && <p>{leftInputError}</p>}
               {rightInputError && <p>{rightInputError}</p>}

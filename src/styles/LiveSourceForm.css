@@ -15,17 +15,18 @@
   margin: 0;
 }
 
+.live-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.live-refresh-button,
 .live-collapse-button {
   width: 2rem;
   height: 2rem;
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(207, 211, 223, 0.4);
-  background: rgba(207, 211, 223, 0.12);
-  color: #e8eaf1;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
   border-radius: 999px;
   padding: 0;
   cursor: pointer;
@@ -33,13 +34,39 @@
     background 140ms ease,
     border-color 140ms ease,
     color 140ms ease,
-    transform 140ms ease;
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.live-refresh-button:disabled,
+.live-collapse-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.live-collapse-button {
+  border: 1px solid rgba(207, 211, 223, 0.4);
+  background: rgba(207, 211, 223, 0.12);
+  color: #e8eaf1;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .live-collapse-button:hover {
   background: rgba(207, 211, 223, 0.2);
   border-color: rgba(207, 211, 223, 0.65);
   color: #fff;
+}
+
+.live-collapse-button:hover,
+.live-collapse-button:focus-visible {
+  animation: live-control-pulse 420ms ease-out;
+}
+
+.live-collapse-button:hover .live-collapse-icon,
+.live-collapse-button:focus-visible .live-collapse-icon {
+  animation: live-collapse-wiggle 420ms ease-out;
 }
 
 .live-collapse-button:active {
@@ -49,6 +76,47 @@
 .live-collapse-button:focus-visible {
   outline: 2px solid rgba(207, 211, 223, 0.5);
   outline-offset: 2px;
+}
+
+.live-refresh-button {
+  border: 1px solid rgba(255, 71, 87, 0.55);
+  background: rgba(255, 71, 87, 0.18);
+  color: #fff;
+}
+
+.live-refresh-button:hover {
+  background: rgba(255, 71, 87, 0.28);
+  border-color: rgba(255, 71, 87, 0.85);
+  color: #fff;
+}
+
+.live-refresh-button:hover,
+.live-refresh-button:focus-visible {
+  animation: live-control-pulse 420ms ease-out;
+}
+
+.live-refresh-button:active {
+  transform: scale(0.96);
+}
+
+.live-refresh-button:focus-visible {
+  outline: 2px solid rgba(255, 71, 87, 0.6);
+  outline-offset: 2px;
+}
+
+.live-refresh-icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  line-height: 1rem;
+  font-size: 1rem;
+  text-align: center;
+  transform: translateY(-0.02rem);
+}
+
+.live-refresh-button:hover .live-refresh-icon,
+.live-refresh-button:focus-visible .live-refresh-icon {
+  animation: live-refresh-spin 420ms ease-in-out;
 }
 
 .live-collapse-icon {
@@ -66,6 +134,44 @@
 .live-collapse-button.is-collapsed .live-collapse-icon {
   transform: rotate(45deg);
   margin-top: -0.05rem;
+}
+
+@keyframes live-control-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+
+  60% {
+    box-shadow: 0 0 0 0.45rem rgba(255, 255, 255, 0.08);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes live-refresh-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes live-collapse-wiggle {
+  0% {
+    transform: rotate(225deg) scale(1);
+  }
+
+  45% {
+    transform: rotate(205deg) scale(1.1);
+  }
+
+  100% {
+    transform: rotate(225deg) scale(1);
+  }
 }
 
 .live-collapsed-summary {
