@@ -19,7 +19,6 @@ function LiveSourceForm({
   const [leftUrl, setLeftUrl] = useState("");
   const [rightUrl, setRightUrl] = useState("");
   const [formError, setFormError] = useState("");
-  const canRefresh = Boolean(leftName && rightName) && !disabled;
 
   const handleApply = () => {
     const leftTrimmed = leftUrl.trim();
@@ -31,9 +30,7 @@ function LiveSourceForm({
     }
 
     setFormError("");
-    if (!disabled) {
-      onApplyUrls(leftTrimmed, rightTrimmed);
-    }
+    onApplyUrls(leftTrimmed, rightTrimmed);
   };
 
   const handleKeyDown = (event) => {
@@ -53,7 +50,7 @@ function LiveSourceForm({
               type="button"
               className="live-refresh-button"
               onClick={handleApply}
-              disabled={!canRefresh}
+              disabled={disabled}
               aria-label="Refresh URLs"
               title="Refresh URLs"
             >
@@ -71,7 +68,10 @@ function LiveSourceForm({
               aria-label={collapsed ? "Expand URL form" : "Collapse URL form"}
               title={collapsed ? "Expand URL form" : "Collapse URL form"}
             >
-              <span className="live-collapse-icon" aria-hidden="true" />
+              <span
+                className={`live-collapse-icon${collapsed ? " is-collapsed" : ""}`}
+                aria-hidden="true"
+              />
             </button>
           )}
         </div>

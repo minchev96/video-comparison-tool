@@ -8,14 +8,13 @@ import LiveSourceForm from "./LiveSourceForm.jsx";
 import QualityChecks from "./QualityChecks.jsx";
 import TopBar from "./TopBar.jsx";
 import WarningBanner from "./WarningBanner.jsx";
+import { clamp } from "./mathUtils.js";
 
 const FPS_CAP = 50;
 const STEP_SECONDS = 1;
 const SYNC_TOLERANCE_SECONDS = 1 / 60;
 const SPIKE_MISMATCH_RATIO = 0.8;
 const PRE_SPIKE_MISMATCH_RATIO = 0.6;
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const formatTime = (seconds) => {
   if (!Number.isFinite(seconds)) return "00:00";

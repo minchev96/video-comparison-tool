@@ -243,12 +243,6 @@
   flex: 0 0 auto;
 }
 
-.website-mismatch-stat-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 0.5rem;
-}
-
 .website-threshold {
   display: inline-flex;
   align-items: center;
@@ -260,24 +254,6 @@
 
 .website-threshold input {
   width: min(260px, 100%);
-}
-
-.website-quality-group {
-  display: inline-flex;
-  gap: 0.8rem;
-}
-
-.website-quality-group label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.website-mismatch-stat {
-  color: #ff4757;
-  font-weight: 600;
-  font-size: 0.9rem;
-  white-space: nowrap;
 }
 
 .website-placeholder {

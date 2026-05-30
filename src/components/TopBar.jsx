@@ -5,9 +5,8 @@ function TopBar({ sourceMode, onGoFiles, onGoLive }) {
     <header className="top-bar">
       <div className="top-bar-main">
         <h1>Video Comparison Tool</h1>
-        <div
+        <nav
           className="top-bar-nav"
-          role="navigation"
           aria-label="Comparison Views"
         >
           <button
@@ -24,7 +23,7 @@ function TopBar({ sourceMode, onGoFiles, onGoLive }) {
           >
             Live Compare
           </button>
-        </div>
+        </nav>
       </div>
     </header>
   );

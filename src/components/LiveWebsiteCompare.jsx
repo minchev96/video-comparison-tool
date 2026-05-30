@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import "../App.css";
 import LiveSourceForm from "./LiveSourceForm.jsx";
 import { shouldShowMismatchStat } from "./liveCompareUtils.js";
+import { clamp } from "./mathUtils.js";
 import TopBar from "./TopBar.jsx";
 import WarningBanner from "./WarningBanner.jsx";
 import "../styles/LiveWebsiteCompare.css";
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const DIFF_TARGET_INTERVAL_MS = 66;
 const OCCLUSION_REFRESH_MIN_MS = 250;
 const VIEWPORT_PRESETS = [

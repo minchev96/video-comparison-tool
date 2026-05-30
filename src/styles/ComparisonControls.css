@@ -15,9 +15,3 @@
   align-items: center;
   gap: 0.5rem;
 }
-
-.radio-group {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
